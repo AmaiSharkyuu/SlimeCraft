@@ -1,0 +1,8 @@
+decomp/
+build/
+plugin/bin/
+plugin/obj/
+plugin/assets/
+backup-saves-*/
+__pycache__/
+*.pyc

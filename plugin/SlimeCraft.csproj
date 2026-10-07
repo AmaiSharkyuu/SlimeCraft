@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>SlimeCraft</AssemblyName>
+    <RootNamespace>SlimeCraft</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+    <!-- Where Slime Rancher lives. Override with -p:GameDir=... if Steam put it somewhere else. -->
+    <GameDir Condition="'$(GameDir)' == ''">D:\Steam\steamapps\common\Slime Rancher</GameDir>
+    <Managed>$(GameDir)\SlimeRancher_Data\Managed</Managed>
+    <PluginOut>$(GameDir)\BepInEx\plugins\SlimeCraft</PluginOut>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx"><HintPath>$(GameDir)\BepInEx\core\BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(GameDir)\BepInEx\core\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\Assembly-CSharp.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\Assembly-CSharp-firstpass.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\InControl.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\DOTween.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\Unity.TextMeshPro.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.CoreModule.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.PhysicsModule.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.IMGUIModule.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.ImageConversionModule.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.AudioModule.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.AnimationModule.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.InputLegacyModule.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.UnityWebRequestModule.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.UnityWebRequestAudioModule.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.TextRenderingModule.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.UIModule.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.UI.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.ScreenCaptureModule.dll"><Private>false</Private></Reference>
+    <Reference Include="$(Managed)\UnityEngine.ParticleSystemModule.dll"><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <!-- Drop the freshly built plugin and the extracted Minecraft assets straight into the game,
+       so a build is all a test needs. -->
+  <Target Name="CopyToGame" AfterTargets="Build">
+    <ItemGroup>
+      <McAssets Include="assets\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginOut)" />
+    <Copy SourceFiles="@(McAssets)" DestinationFolder="$(PluginOut)\assets\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
