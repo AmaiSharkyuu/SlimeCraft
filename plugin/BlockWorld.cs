@@ -224,6 +224,7 @@ namespace SlimeCraft
             MarkDirty(c);
             Lights.Changed(c, s);
             Persist.Dirty = true;
+            Redstone.OnSet(c, old, s);
             if (update) BlockRules.NeighbourChanged(c);
         }
 
@@ -254,6 +255,7 @@ namespace SlimeCraft
 
         public static void Clear()
         {
+            Redstone.Clear();
             Blocks.Clear();
             Entities.Clear();
             foreach (var ch in chunks.Values) if (ch.Go != null) Object.Destroy(ch.Go);

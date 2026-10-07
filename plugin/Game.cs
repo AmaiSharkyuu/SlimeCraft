@@ -118,6 +118,7 @@ namespace SlimeCraft
 
         private void Frame()
         {
+            Perf.Frame();
             HideSlimeRancherBits();
 
             bool gameplay = !Screens.Open && !Chat.Open && Gameplay();
@@ -140,7 +141,7 @@ namespace SlimeCraft
                 if (Input.GetKeyUp(KeyCode.F3)) { if (!f3Used) DebugScreen.Shown = !DebugScreen.Shown; f3Used = false; }
             }
 
-            Interaction.Update();
+            Perf.Run("Interaction.Update", () => Interaction.Update());
 
             // 20 Hz Minecraft tick for the world systems
             tickAcc += Time.deltaTime;
@@ -148,25 +149,25 @@ namespace SlimeCraft
             while (tickAcc >= 0.05f && guard++ < 5)
             {
                 tickAcc -= 0.05f;
-                Health.Tick();
+                Perf.Run("Health.Tick", () => Health.Tick());
                 if (Commands.NaturalRegen) Hunger.Tick();
-                Effects.Tick();
-                Machines.Tick();
-                Machines.Flush();
-                Redstone.Tick();
-                Fishing.Tick();
-                Riptide.Tick();
-                Pickups.Update();
-                Mobs.NaturalSpawn();
+                Perf.Run("Effects.Tick", () => Effects.Tick());
+                Perf.Run("Machines.Tick", () => Machines.Tick());
+                Perf.Run("Machines.Flush", () => Machines.Flush());
+                Perf.Run("Redstone.Tick", () => Redstone.Tick());
+                Perf.Run("Fishing.Tick", () => Fishing.Tick());
+                Perf.Run("Riptide.Tick", () => Riptide.Tick());
+                Perf.Run("Pickups.Update", () => Pickups.Update());
+                Perf.Run("Mobs.NaturalSpawn", () => Mobs.NaturalSpawn());
             }
             if (tickAcc > 0.25f) tickAcc = 0;
 
-            BlockWorld.Update();
-            Lights.Update(player.transform.position);
-            Atlas.Animate(Time.deltaTime);
-            Special.Animate(Time.deltaTime);
-            Glint.Animate();
-            Particles.Update();
+            Perf.Run("BlockWorld.Update", () => BlockWorld.Update());
+            Perf.Run("Lights.Update", () => Lights.Update(player.transform.position));
+            Perf.Run("Atlas.Animate", () => Atlas.Animate(Time.deltaTime));
+            Perf.Run("Special.Animate", () => Special.Animate(Time.deltaTime));
+            Perf.Run("Glint.Animate", () => Glint.Animate());
+            Perf.Run("Particles.Update", () => Particles.Update());
 
             for (int i = later.Count - 1; i >= 0; i--)
                 if (Time.time >= later[i].Key) { var a = later[i].Value; later.RemoveAt(i); try { a(); } catch (Exception e) { Plugin.Log.LogError(e); } }
@@ -207,10 +208,9 @@ namespace SlimeCraft
             GUI.depth = -1000;
             McGui.UpdateScale();
             bool srMenu = SRInput.Instance.GetInputMode() != SRInput.InputMode.DEFAULT;
-            if (Screens.Open) { Hud.Draw(); Screens.Draw(); return; }
+            if (Screens.Open) { Perf.Run("gui." + Event.current.type, () => { Hud.Draw(); Screens.Draw(); }); return; }
             if (Time.timeScale == 0f || srMenu) return;
-            Hud.Draw();
-            Chat.DrawInput();
+            Perf.Run("gui." + Event.current.type, () => { Hud.Draw(); Chat.DrawInput(); });
         }
 
         // ------------------------------------------------------------------------------------------------ tests
@@ -234,6 +234,14 @@ namespace SlimeCraft
                     cam.Yaw = F(0); cam.Pitch = F(1);
                     break;
                 }
+                case "block":
+                {
+                    // Minecraft coordinates (z flipped), like /setblock
+                    var c = new Vector3Int(int.Parse(a[0]), int.Parse(a[1]), -int.Parse(a[2]) - 1);
+                    Plugin.Log.LogInfo($"block {arg} = {BlockWorld.Get(c)?.ToString() ?? "air"} cmp={Redstone.ComparatorOutput(c)}");
+                    break;
+                }
+                case "perf": Perf.Dump(); break;
                 case "tp": SrWorld.Teleport(new Vector3(F(0), F(1), F(2))); break;
                 case "walk": Motor.TestMove = new Vector2(F(0), F(1)); Motor.TestUntil = Time.time + F(2); Motor.TestJump = a.Length > 3 && a[3] == "jump"; Motor.TestSprint = a.Length > 3 && a[3] == "sprint"; break;
                 case "where":

@@ -163,6 +163,14 @@ namespace SlimeCraft
 
         public static void Bubble(Vector3 at) => Sheet(at, Vector3.up * 0.05f + Random.insideUnitSphere * 0.01f, "bubble", 0.06f, 20 + Random.Range(0, 20), Color.white);
 
+        /// <summary>A note block's note, coloured round the colour wheel by pitch like Minecraft's.</summary>
+        public static void Note(Vector3 at, int note)
+        {
+            float t = note / 24f;
+            var c = new Color(Mathf.Max(0f, Mathf.Sin((t + 0f) * Mathf.PI * 2f) * 0.65f + 0.35f), Mathf.Max(0f, Mathf.Sin((t + 1f / 3f) * Mathf.PI * 2f) * 0.65f + 0.35f), Mathf.Max(0f, Mathf.Sin((t + 2f / 3f) * Mathf.PI * 2f) * 0.65f + 0.35f));
+            Sheet(at, Vector3.up * 0.02f, "note", 0.2f, 6, c);
+        }
+
         public static void Heart(Vector3 at) => Sheet(at, Vector3.up * 0.04f, "heart", 0.15f, 20, Color.white);
 
         public static void Angry(Vector3 at) => Sheet(at, Vector3.up * 0.02f, "angry", 0.15f, 20, Color.white);

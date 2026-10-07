@@ -373,8 +373,14 @@ namespace SlimeCraft
                 }
             }
             var key = modelName + (s.Color >= 0 ? "#" + s.Color : "") + (s.Potion ?? "");
-            if (icons.TryGetValue(key, out var ic) && ic != null) return ic;
-            ic = RenderIcon(s, modelName);
+            if (icons.TryGetValue(key, out var ic)) return ic;
+            try { ic = RenderIcon(s, modelName); }
+            catch (System.Exception e)
+            {
+                // cache the failure too: retrying every frame for every slot brings the game to a crawl
+                ic = null;
+                Plugin.Log.LogWarning("icon " + modelName + ": " + e.Message);
+            }
             icons[key] = ic;
             return ic;
         }
@@ -386,7 +392,10 @@ namespace SlimeCraft
             if (m == null) return null;
             if (iconMats.TryGetValue(m, out var c) && c != null) return c;
             bool see = m.renderQueue >= 2450;
-            c = new Material(Shader.Find(see ? "Legacy Shaders/Transparent/Diffuse" : "Legacy Shaders/Diffuse")) { name = m.name + " (icon)", mainTexture = m.mainTexture, color = Color.white };
+            var sh = BlockWorld.FindShader(see ? "Legacy Shaders/Transparent/Cutout/Diffuse" : "Legacy Shaders/Diffuse");
+            if (sh == null) return m;   // not in this build: keep the world material
+            c = new Material(sh) { name = m.name + " (icon)", mainTexture = m.mainTexture, color = Color.white };
+            if (see) c.SetFloat("_Cutoff", 0.5f);
             Object.DontDestroyOnLoad(c);
             iconMats[m] = c;
             return c;

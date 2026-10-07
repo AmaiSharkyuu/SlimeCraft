@@ -545,7 +545,7 @@ namespace SlimeCraft
         private static bool Smooth(vp_FPController __instance)
         {
             if (!Game.Active || Motor.SuspendedByGame) return true;
-            Motor.Fixed(__instance);
+            Perf.Run("Motor", () => Motor.Fixed(__instance));
             return false;
         }
 

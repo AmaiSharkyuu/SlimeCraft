@@ -236,7 +236,9 @@ namespace SlimeCraft
             camT.rotation = Quaternion.Euler(e.x, e.y, 0f); // Slime Rancher's camera roll springs are not Minecraft's
         }
 
-        private void OnPreCull()
+        private void OnPreCull() { Perf.Run("View.PreCull", PreCull); }
+
+        private void PreCull()
         {
             if (!Game.Active || camT == null || SrWorld.Player == null) return;
             if (Motor.SuspendedByGame) { HideFp(true); if (Body != null) Body.SetVisible(false, false); return; }

@@ -236,6 +236,8 @@ namespace SlimeCraft
         {
             switch (s.Block.Class)
             {
+                case "RedstoneWireBlock":
+                    return Redstone.Shape(cell, s);
                 case "FenceBlock":
                     foreach (var d in Horizontal) s = s.With(N(d), FenceConnects(s, cell, d) ? "true" : "false");
                     return s;
@@ -521,10 +523,21 @@ namespace SlimeCraft
                 case "NoteBlock":
                 {
                     int note = (int.Parse(s["note"]) + 1) % 25;
-                    BlockWorld.Set(c, s.With("note", note.ToString()), false);
-                    Sounds.Play("block.note_block.harp", BlockWorld.Center(c), 3f, Mathf.Pow(2f, (note - 12) / 12f));
+                    var ns = s.With("note", note.ToString()).With("instrument", Redstone.Instrument(c));
+                    BlockWorld.Set(c, ns, false);
+                    Redstone.PlayNote(c, ns);
                     return true;
                 }
+                case "ComparatorBlock":
+                {
+                    bool sub = s["mode"] != "subtract";
+                    BlockWorld.Set(c, s.With("mode", sub ? "subtract" : "compare"), false);
+                    Sounds.Play("block.comparator.click", BlockWorld.Center(c), 0.3f, sub ? 0.55f : 0.5f);
+                    return true;
+                }
+                case "DaylightDetectorBlock":
+                    BlockWorld.Set(c, s.With("inverted", s["inverted"] == "true" ? "false" : "true"), false);
+                    return true;
                 case "RepeaterBlock":
                 {
                     int delay = int.Parse(s["delay"]) % 4 + 1;
