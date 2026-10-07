@@ -513,7 +513,7 @@ namespace SlimeCraft
             int xp = 0;
             foreach (var s in new[] { top, bottom })
                 if (s?.Ench != null) foreach (var kv in s.Ench) if (McData.Enchants.TryGetValue(kv.Key, out var e) && !e.Curse) xp += e.MinPower[Mathf.Clamp(kv.Value - 1, 0, e.MinPower.Length - 1)];
-            if (xp > 0) XpOrb.Spawn(Player.main.transform.position, Mathf.CeilToInt(xp / 2f) + Random.Range(0, Mathf.CeilToInt(xp / 2f) + 1));
+            if (xp > 0) XpOrb.Spawn(SrWorld.Eye, Mathf.CeilToInt(xp / 2f) + Random.Range(0, Mathf.CeilToInt(xp / 2f) + 1));
             top = null; bottom = null;
             Sounds.Play("block.grindstone.use", null);
             Refresh();

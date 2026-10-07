@@ -28,7 +28,7 @@ namespace SlimeCraft
             ItemStack ammo = FindAmmo();
             if (ammo == null && !infinite) return;
             if (ammo == null) ammo = ItemStack.Of("arrow");
-            var cam = MainCamera.camera.transform;
+            var cam = Camera.main.transform;
             var a = Arrow.Create(ammo.Copy(1), cam.position - Vector3.up * 0.1f, cam.forward, f * 3f, 1f);
             a.Crit = f == 1f;
             int power = bow.Level("power");
@@ -50,7 +50,7 @@ namespace SlimeCraft
 
         public static void ShootCrossbow(ItemStack cb)
         {
-            var cam = MainCamera.camera.transform;
+            var cam = Camera.main.transform;
             int n = cb.Level("multishot") > 0 ? 3 : 1;
             for (int i = 0; i < n; i++)
             {
@@ -66,7 +66,7 @@ namespace SlimeCraft
 
         public static void ThrowTrident(ItemStack t)
         {
-            var cam = MainCamera.camera.transform;
+            var cam = Camera.main.transform;
             int riptide = t.Level("riptide");
             Inventory.DamageHeld(1);
             if (riptide > 0)
@@ -90,7 +90,7 @@ namespace SlimeCraft
 
         public static void Throw(ItemStack s)
         {
-            var cam = MainCamera.camera.transform;
+            var cam = Camera.main.transform;
             var id = s.Item.Id;
             float speed = id == "experience_bottle" ? 0.7f : id.EndsWith("potion") ? 0.5f : 1.5f;
             float pitchOffset = id == "experience_bottle" ? -20f : id.EndsWith("potion") ? -20f : 0f;
@@ -251,10 +251,10 @@ namespace SlimeCraft
                 TryPickup();
                 return;
             }
-            if (returning > 0 && Player.main != null)
+            if (returning > 0 && SrWorld.Player != null)
             {
                 // TridentEntity loyalty: flies back to the owner
-                var target = Player.main.transform.position - Vector3.up * 0.3f;
+                var target = SrWorld.Eye - Vector3.up * 0.3f;
                 var d = target - transform.position;
                 Vel = Vel * 0.95f + d.normalized * 0.05f * Loyalty;
                 transform.position += Vel;
@@ -319,8 +319,8 @@ namespace SlimeCraft
 
         private void TryPickup()
         {
-            if (Player.main == null) return;
-            var d = Player.main.transform.position - Vector3.up * 0.9f - transform.position;
+            if (SrWorld.Player == null) return;
+            var d = SrWorld.Eye - Vector3.up * 0.9f - transform.position;
             if (d.magnitude > 1.6f) return;
             GiveBack();
         }
@@ -454,7 +454,7 @@ namespace SlimeCraft
 
         protected override void Render(float partial)
         {
-            if (vis != null && MainCamera.camera != null) vis.rotation = MainCamera.camera.transform.rotation;
+            if (vis != null && Camera.main != null) vis.rotation = Camera.main.transform.rotation;
         }
     }
 

@@ -297,7 +297,7 @@ namespace SlimeCraft
             var p = Player.main;
             if (p == null) return;
             var feet = p.transform.position - Vector3.up * Motor.EyeHeight;
-            var cam = MainCamera.camera.transform;
+            var cam = Camera.main.transform;
             float mcYaw = Mathf.Repeat(cam.eulerAngles.y - 180f + 180f, 360f) - 180f;
             var facing = BlockRules.HorizontalFacing(BlockRules.McLook(cam.forward));
             var lines = new List<string>

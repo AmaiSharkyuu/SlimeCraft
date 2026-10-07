@@ -49,13 +49,13 @@ namespace SlimeCraft
                 {
                     var mode = arg == "creative" ? global::GameMode.Creative : global::GameMode.Survival;
                     var menu = uGUI_MainMenu.main;
-                    if (menu != null) UWE.CoroutineHost.StartCoroutine(menu.StartNewGame(mode));
+                    if (menu != null) Game.I.StartCoroutine(menu.StartNewGame(mode));
                     break;
                 }
                 case "load":
-                    UWE.CoroutineHost.StartCoroutine(uGUI_MainMenu.main.LoadGameAsync(arg, "", 0, global::GameMode.Survival));
+                    Game.I.StartCoroutine(uGUI_MainMenu.main.LoadGameAsync(arg, "", 0, global::GameMode.Survival));
                     break;
-                case "save": UWE.CoroutineHost.StartCoroutine(IngameMenu.main.SaveGameAsync()); break;
+                case "save": Game.I.StartCoroutine(IngameMenu.main.SaveGameAsync()); break;
                 case "console": DevConsole.SendConsoleCommand(arg); break;
                 case "dump": Dump(arg); break;
                 case "timescale": Time.timeScale = float.Parse(arg, System.Globalization.CultureInfo.InvariantCulture); break;
@@ -78,7 +78,7 @@ namespace SlimeCraft
                     int n = 0;
                     foreach (var r in rs)
                     {
-                        if (go == null && Player.main != null && (r.bounds.center - Player.main.transform.position).sqrMagnitude > 900) continue;
+                        if (go == null && SrWorld.Player != null && (r.bounds.center - SrWorld.Eye).sqrMagnitude > 900) continue;
                         foreach (var m in r.sharedMaterials) if (m != null) sb.AppendLine(r.name + " L" + r.gameObject.layer + " : " + m.name + " : " + m.shader.name + " kw=" + string.Join(",", m.shaderKeywords) + " q=" + m.renderQueue);
                         if (++n > 300) break;
                     }
@@ -143,8 +143,8 @@ namespace SlimeCraft
         {
             var sb = new StringBuilder();
             GameObject go = null;
-            if (what == "player" || what == "") go = Player.main != null ? Player.main.gameObject : null;
-            else if (what == "camera") go = MainCamera.camera != null ? MainCamera.camera.transform.root.gameObject : null;
+            if (what == "player" || what == "") go = SrWorld.Player != null ? Player.main.gameObject : null;
+            else if (what == "camera") go = Camera.main != null ? Camera.main.transform.root.gameObject : null;
             else go = GameObject.Find(what);
             if (go == null)
                 foreach (var r in UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects())

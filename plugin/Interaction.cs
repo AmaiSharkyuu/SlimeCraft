@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace SlimeCraft
 {
-    /// <summary>What the crosshair is on: a Minecraft block, a Minecraft mob, a Subnautica creature, object or terrain.</summary>
+    /// <summary>What the crosshair is on: a Minecraft block, a Minecraft mob, a Slime Rancher actor, object or terrain.</summary>
     public struct Target
     {
         public bool Any;
@@ -14,20 +14,20 @@ namespace SlimeCraft
         public Vector3 Point, Normal;
         public float Distance;
         public Mob Mob;
-        public LiveMixin Live;          // a Subnautica creature (or anything with health)
-        public GameObject SnObject;     // Subnautica object hit
+        public Identifiable Actor;      // a Slime Rancher slime, plort, fruit, veggie, chicken... that can be grabbed
+        public GameObject SrObject;     // Slime Rancher object hit
         public bool Terrain;
         public RaycastHit Hit;
     }
 
     /// <summary>
-    /// Minecraft's controls on top of Subnautica: left click attacks (PlayerEntity.attack with the cooldown,
-    /// critical hits, sweeping, Sharpness/Impaling/Knockback/Fire Aspect) and mines (Minecraft blocks with their
-    /// real hardness and the cracking overlay; Subnautica's ground and outcrops give Minecraft blocks and their own
-    /// resources), right click uses: Subnautica's buttons, doors, fabricators and pickups, Minecraft blocks
-    /// (doors, chests, crafting tables...), placing blocks, eating, bows, tridents (with Riptide in the ocean),
-    /// crossbows, buckets, fireworks, armour, spawn eggs, throwables, fishing. Q drops, middle click picks a block.
-    /// A held Subnautica tool keeps Subnautica's own controls.
+    /// Minecraft's controls in Slime Rancher: left click attacks (PlayerEntity.attack with the cooldown, critical
+    /// hits, sweeping, Sharpness/Knockback/Fire Aspect; slimes get knocked back, tarrs pop) and mines (Minecraft
+    /// blocks with their real hardness and the cracking overlay; Slime Rancher's rocks, sand and earth give
+    /// Minecraft blocks), right click uses: Slime Rancher's buttons, doors and screens, grabbing slimes, plorts,
+    /// fruits and chickens, putting them down and feeding slimes, Minecraft blocks (doors, chests, crafting
+    /// tables...), placing blocks, eating, bows, tridents, crossbows, buckets, fireworks, armour, spawn eggs,
+    /// throwables, fishing. A/Q drops, middle click picks a block.
     /// </summary>
     public static class Interaction
     {
@@ -38,13 +38,12 @@ namespace SlimeCraft
         private static float tickAcc;
         private static bool leftWas, rightWas, leftLatch, rightLatch;
         private static int rightDelay, breakCooldown;
-        public static bool SuppressSnRight, SuppressSnLeft;
+        private static readonly Dictionary<int, float> tarrDamage = new Dictionary<int, float>();
 
         // mining
         private static Vector3Int miningCell; private static bool mining, miningTerrain;
         private static float progress; private static int hitSoundTicks;
         private static BlockDef terrainBlock; private static bool terrainOre; private static Vector3 terrainPoint, terrainNormal;
-        private static BreakableResource miningOutcrop;
         private static GameObject crack; private static MeshRenderer crackR; private static int crackStage = -1;
 
         public static float Reach => GameMode.Creative ? 5f : 4.5f;
@@ -70,15 +69,40 @@ namespace SlimeCraft
         public static void Reset()
         {
             Using = false; mining = false; progress = 0;
+            tarrDamage.Clear();
             if (crack != null) Object.Destroy(crack);
         }
 
         // ------------------------------------------------------------------------------------------------ targeting
 
+        // Slime Rancher's solid world plus every actor layer: Actor, Launched, ActorStatic, ActorIgnorePlayer (plorts,
+        // fruits and veggies lying around, which the player walks through) and ActorEchoes.
+        private const int WorldMask = -675375893 | (1 << 15) | (1 << 9) | (1 << 21) | (1 << 0) | (1 << 11) | (1 << 16);
+
+        /// <summary>A Slime Rancher thing Steve can grab: anything the vacpack could take right now.</summary>
+        private static Identifiable Grabbable(Collider col)
+        {
+            var id = col.GetComponentInParent<Identifiable>();
+            if (id == null || Identifiable.IsGordo(id.id)) return null;
+            var vac = id.GetComponent<Vacuumable>();
+            if (vac == null || !vac.enabled) return null;
+            return id;
+        }
+
+        private static bool Ignored(Collider c)
+        {
+            if (c == null || BlockWorld.CellOf(c, out _)) return true;
+            var pl = SrWorld.Player;
+            if (pl != null && c.transform.IsChildOf(pl.transform)) return true;
+            if (c.GetComponentInParent<Mob>() != null || c.GetComponentInParent<McEntity>() != null) return true;
+            if (View.I != null && View.I.Body != null && c.transform.IsChildOf(View.I.Body.transform)) return true;
+            return false;
+        }
+
         private static Target Raycast()
         {
             var t = new Target();
-            var cam = MainCamera.camera.transform;
+            var cam = Camera.main.transform;
             var origin = cam.position;
             var dir = cam.forward;
             float reach = Reach;
@@ -92,24 +116,37 @@ namespace SlimeCraft
             // 2. Minecraft mobs (3 blocks like Minecraft's entity reach, 5 in creative... the block reach caps it)
             var mob = Mobs.Raycast(origin, dir, Mathf.Min(reach, GameMode.Creative ? 5f : 3f), out float md);
             if (mob != null) { t = new Target { Any = true, Mob = mob, Distance = md, Point = origin + dir * md }; reach = md; }
-            // 3. Subnautica's world
-            int mask = ~((1 << LayerID.Player) | (1 << LayerID.Trigger) | (1 << LayerID.UI) | (1 << View.HandLayer));
-            var hits = Physics.RaycastAll(origin, dir, reach, mask, QueryTriggerInteraction.Ignore);
+            // 3. Slime Rancher's world: actors first, then solid ground and objects
+            var hits = Physics.RaycastAll(origin, dir, reach, WorldMask, QueryTriggerInteraction.Collide);
             System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            Target sr = default;
             foreach (var h in hits)
             {
-                if (h.collider == null || BlockWorld.CellOf(h.collider, out _)) continue;
-                if (h.collider.transform.IsChildOf(Player.main.transform)) continue;
-                if (h.collider.GetComponentInParent<Mob>() != null) continue;
-                if (View.I != null && View.I.Body != null && h.collider.transform.IsChildOf(View.I.Body.transform)) continue;
-                var tool = SrBridge.HeldTool;
-                if (tool != null && h.collider.transform.IsChildOf(tool.transform)) continue;
-                t = new Target { Any = true, Hit = h, Point = h.point, Normal = h.normal, Distance = h.distance, SnObject = h.collider.gameObject };
-                var lm = h.collider.GetComponentInParent<LiveMixin>();
-                if (lm != null && lm.IsAlive() && lm.GetComponent<Creature>() != null) t.Live = lm;
-                t.Terrain = SrWorld.IsTerrain(h.collider);
+                if (Ignored(h.collider)) continue;
+                var id = Grabbable(h.collider);
+                if (id != null) { sr = new Target { Any = true, Hit = h, Point = h.point, Normal = h.normal, Distance = h.distance, SrObject = id.gameObject, Actor = id }; break; }
+                if (h.collider.isTrigger) continue;
+                sr = new Target { Any = true, Hit = h, Point = h.point, Normal = h.normal, Distance = h.distance, SrObject = h.collider.gameObject, Terrain = SrWorld.IsTerrain(h.collider) };
                 break;
             }
+            // Minecraft entity hitboxes are generous: a fruit hanging in a tree or a carrot in the soil sits half
+            // inside other colliders, so also sweep a small sphere for anything grabbable just as close.
+            if (sr.Actor == null)
+            {
+                float limit = sr.Any ? sr.Distance + 0.35f : reach;
+                foreach (var h in Physics.SphereCastAll(origin, 0.3f, dir, Mathf.Min(limit, reach), WorldMask, QueryTriggerInteraction.Collide))
+                {
+                    if (Ignored(h.collider)) continue;
+                    var id = Grabbable(h.collider);
+                    if (id == null) continue;
+                    if (sr.Actor == null || h.distance < sr.Distance)
+                    {
+                        var point = h.point == Vector3.zero ? id.transform.position : h.point;
+                        sr = new Target { Any = true, Hit = h, Point = point, Normal = -dir, Distance = h.distance, SrObject = id.gameObject, Actor = id };
+                    }
+                }
+            }
+            if (sr.Any && sr.Distance <= reach) t = sr;
             return t;
         }
 
@@ -159,10 +196,8 @@ namespace SlimeCraft
 
         public static void Update()
         {
-            var p = Player.main;
-            if (p == null || MainCamera.camera == null) return;
-            bool blocked = Screens.Open || Chat.Open || Motor.SuspendedByGame || p.GetPDA() != null && p.GetPDA().isInUse || !AvatarInputHandler.main.IsEnabled() || Time.timeScale == 0;
-            SuppressSnLeft = SuppressSnRight = false;
+            if (SrWorld.Player == null || Camera.main == null) return;
+            bool blocked = Screens.Open || Chat.Open || Motor.SuspendedByGame || !Game.Gameplay();
             Current = blocked ? new Target() : Raycast();
 
             bool left = !blocked && Input.GetMouseButton(0), right = !blocked && Input.GetMouseButton(1);
@@ -173,43 +208,36 @@ namespace SlimeCraft
             bool leftDown = leftLatch, rightDown = rightLatch;
             leftWas = left; rightWas = right;
 
-            var held = Inventory.Held;
-            bool snTool = held != null && held.IsSr && SrItems.IsTool(held.Actor) && SrBridge.HeldTool != null;
-            var hand = p.guiHand;
-            var snTarget = hand != null ? hand.GetActiveTarget() : null;
-
             if (!blocked)
             {
-                // hotbar: number keys and the wheel (Minecraft's scroll goes the other way round from Subnautica's)
+                // hotbar: number keys and the wheel
                 for (int i = 0; i < 9; i++) if (Input.GetKeyDown(KeyCode.Alpha1 + i)) Select(i);
                 float wheel = Input.mouseScrollDelta.y;
                 if (wheel > 0.01f) Select((Inventory.Selected + 8) % 9);
                 else if (wheel < -0.01f) Select((Inventory.Selected + 1) % 9);
                 if (Input.GetKeyDown(Game.DropKey)) Drop(Input.GetKey(KeyCode.LeftControl));
                 if (Input.GetMouseButtonDown(2)) PickBlock();
-                if (Input.GetKeyDown(KeyCode.F) && !snTool) SwapHands();
+                // F swaps hands, unless Slime Rancher's flashlight key is F: then it stays the flashlight
+                if (Input.GetKeyDown(KeyCode.G)) SwapHands();
             }
 
-            // Subnautica tool in hand: its own controls; right click still uses what is targeted
-            if (snTool)
+            // Slime Rancher's own buttons, doors, plots and screens take the right click when one is under the cursor.
+            if (rightDown && GamePatches.UiTargeted && !t_IsBlockOrMob())
             {
-                if (rightDown && snTarget != null && !SrBridge.HeldTool.DoesOverrideHand())
-                {
-                    GUIHand.Send(snTarget, HandTargetEventType.Click, hand);
-                    SuppressSnRight = true;
-                    View.I?.Swing();
-                }
-                if (leftDown) View.I?.Swing();
-                leftLatch = rightLatch = false;
-                StopMining();
+                GamePatches.RequestInteract();
+                View.I?.Swing();
+                rightLatch = false;
+                rightDelay = 4;
                 return;
             }
 
             tickAcc += Time.deltaTime;
             int guard = 0;
-            while (tickAcc >= 0.05f && guard++ < 4) { tickAcc -= 0.05f; Tick(left || leftDown, right || rightDown, leftDown, rightDown, snTarget, hand); leftDown = false; rightDown = false; leftLatch = rightLatch = false; }
+            while (tickAcc >= 0.05f && guard++ < 4) { tickAcc -= 0.05f; Tick(left || leftDown, right || rightDown, leftDown, rightDown); leftDown = false; rightDown = false; leftLatch = rightLatch = false; }
             UpdateCrack();
         }
+
+        private static bool t_IsBlockOrMob() => Current.IsBlock || Current.Mob != null;
 
         private static void Select(int i)
         {
@@ -219,12 +247,11 @@ namespace SlimeCraft
             Hud.ShowItemName();
         }
 
-        private static void Tick(bool left, bool right, bool leftDown, bool rightDown, GameObject snTarget, GUIHand hand)
+        private static void Tick(bool left, bool right, bool leftDown, bool rightDown)
         {
             if (rightDelay > 0) rightDelay--;
             if (breakCooldown > 0) breakCooldown--;
             var t = Current;
-            var held = Inventory.Held;
 
             // ---- item use in progress
             if (Using)
@@ -239,25 +266,10 @@ namespace SlimeCraft
             {
                 if (leftDown)
                 {
-                    if (t.Mob != null) { Attack(t); return; }
-                    if (t.Live != null) { Attack(t); return; }
-                    // Subnautica's things answer the left click too (hatches, buttons, pickups), as long as it is not
-                    // something to fight or to mine
-                    if (snTarget != null && !t.IsBlock && snTarget.GetComponentInParent<BreakableResource>() == null)
-                    {
-                        var lm = snTarget.GetComponentInParent<LiveMixin>();
-                        bool creature = lm != null && lm.IsAlive() && snTarget.GetComponentInParent<Creature>() != null;
-                        if (!creature)
-                        {
-                            GUIHand.Send(snTarget, HandTargetEventType.Click, hand);
-                            View.I?.Swing();
-                            return;
-                        }
-                    }
+                    if (t.Mob != null || t.Actor != null) { Attack(t); return; }
                     if (!t.Any) { View.I?.Swing(); View.I?.ResetAttackCooldown(); }
                 }
-                if (t.IsBlock || t.Terrain || t.SnObject != null && t.SnObject.GetComponentInParent<BreakableResource>() != null || t.SnObject != null && Utils.GetObjectSurfaceType(t.SnObject) != VFXSurfaceTypes.none && !t.Live)
-                    Mine(t);
+                if (t.IsBlock || t.Terrain) Mine(t);
                 else StopMining();
             }
             else StopMining();
@@ -266,7 +278,7 @@ namespace SlimeCraft
             if (right && rightDelay == 0)
             {
                 rightDelay = 4; // Minecraft's itemUseCooldown
-                Use(t, snTarget, hand, rightDown);
+                Use(t, rightDown);
             }
         }
 
@@ -280,7 +292,7 @@ namespace SlimeCraft
             float baseDmg = held != null && held.IsMc ? held.Item.AttackDamage : 1f;
             if (Effects.Has("strength")) baseDmg += 3f * (Effects.Amplifier("strength") + 1);
             if (Effects.Has("weakness")) baseDmg -= 4f * (Effects.Amplifier("weakness") + 1);
-            bool undead = t.Mob != null && t.Mob.Undead, arthropod = t.Mob != null && t.Mob.Arthropod, aquatic = t.Mob != null ? t.Mob.Aquatic : t.Live != null;
+            bool undead = t.Mob != null && t.Mob.Undead, arthropod = t.Mob != null && t.Mob.Arthropod, aquatic = t.Mob != null && t.Mob.Aquatic;
             float ench = 0;
             if (held != null)
             {
@@ -305,7 +317,7 @@ namespace SlimeCraft
             if (crit) f *= 1.5f;
             f += ench;
             bool sweep = strong && !crit && !sprintHit && Motor.OnGround && held != null && held.IsMc && held.Item.Class == "SwordItem";
-            var yaw = MainCamera.camera.transform.forward; yaw.y = 0; yaw.Normalize();
+            var yaw = Camera.main.transform.forward; yaw.y = 0; yaw.Normalize();
 
             bool hit = DealDamage(t, f, knock, yaw, held);
             if (!hit) { Sounds.Play("entity.player.attack.nodamage", pos); return; }
@@ -332,23 +344,33 @@ namespace SlimeCraft
                 if (fire > 0) t.Mob.SetOnFire(fire * 4);
                 return t.Mob.Damage(dmg, "player", 0.4f + knock * 0.5f, dir);
             }
-            if (t.Live != null)
+            if (t.Actor != null)
             {
-                // Subnautica creatures: one Minecraft health point is 5 of theirs, like the player's own scale
-                bool ok = t.Live.TakeDamage(dmg * Health.Scale, t.Point, fire > 0 ? DamageType.Fire : DamageType.Normal, Player.main.gameObject);
-                var rb = t.Live.GetComponent<Rigidbody>();
-                if (rb != null && !rb.isKinematic) rb.AddForce((dir * (0.4f + knock * 0.5f) + Vector3.up * 0.1f) * 8f, ForceMode.VelocityChange);
-                if (!t.Live.IsAlive()) OnSnKill(t.Live);
-                return ok || dmg > 0;
+                // Slime Rancher actors: Minecraft's knockback (0.4 blocks/tick and up), and tarrs, which no water gun
+                // washes away any more, pop once they have taken 10 Minecraft health points of damage.
+                var rb = t.Actor.GetComponent<Rigidbody>();
+                if (rb != null && !rb.isKinematic) rb.AddForce((dir * (0.4f + knock * 0.5f) + Vector3.up * 0.2f) * 20f, ForceMode.VelocityChange);
+                var id = t.Actor.id;
+                if (Identifiable.IsSlime(id)) Sounds.Play(Identifiable.IsLargo(id) ? "entity.slime.hurt" : "entity.slime.hurt_small", t.Point);
+                if (Identifiable.IsTarr(id))
+                {
+                    int key = t.Actor.gameObject.GetInstanceID();
+                    tarrDamage.TryGetValue(key, out var taken);
+                    taken += dmg;
+                    if (taken >= 10f)
+                    {
+                        tarrDamage.Remove(key);
+                        var at = t.Actor.transform.position;
+                        Particles.Break(at, McData.Block("black_concrete_powder")?.Default);
+                        Sounds.Play("entity.slime.death", at);
+                        Destroyer.DestroyActor(t.Actor.gameObject, "SlimeCraft.Attack");
+                        XpOrb.Spawn(at, 3);
+                    }
+                    else tarrDamage[key] = taken;
+                }
+                return true;
             }
             return false;
-        }
-
-        /// <summary>Killing a Subnautica creature gives Minecraft experience by its size, like a mob kill.</summary>
-        private static void OnSnKill(LiveMixin lm)
-        {
-            int xp = Mathf.Clamp(Mathf.RoundToInt(lm.maxHealth / 20f), 1, 50);
-            XpOrb.Spawn(lm.transform.position, xp);
         }
 
         // ------------------------------------------------------------------------------------------------ mining
@@ -369,7 +391,7 @@ namespace SlimeCraft
                     breakCooldown = 5;
                     return;
                 }
-                if (!mining || miningTerrain || miningCell != t.Cell) { mining = true; miningTerrain = false; miningCell = t.Cell; progress = 0; hitSoundTicks = 0; miningOutcrop = null; }
+                if (!mining || miningTerrain || miningCell != t.Cell) { mining = true; miningTerrain = false; miningCell = t.Cell; progress = 0; hitSoundTicks = 0; }
                 progress += Mining.Delta(s.Block, held);
                 View.I?.Swing();
                 if (hitSoundTicks++ % 4 == 0) Sounds.Play(Sounds.BlockEvent(s.Block.Sound, "hit"), BlockWorld.Center(t.Cell), 0.25f, 0.5f);
@@ -382,18 +404,16 @@ namespace SlimeCraft
                 }
                 return;
             }
-            // Subnautica: an outcrop breaks into its resources; the ground gives Minecraft blocks
-            var outcrop = t.SnObject != null ? t.SnObject.GetComponentInParent<BreakableResource>() : null;
-            if (!mining || !miningTerrain || (terrainPoint - t.Point).sqrMagnitude > 0.5f || miningOutcrop != outcrop)
+            // Slime Rancher's ground and rocks give Minecraft blocks (the scenery itself stays)
+            if (!mining || !miningTerrain || (terrainPoint - t.Point).sqrMagnitude > 0.5f)
             {
                 mining = true; miningTerrain = true; progress = 0; hitSoundTicks = 0;
-                terrainPoint = t.Point; terrainNormal = t.Normal; miningOutcrop = outcrop;
-                terrainBlock = outcrop != null ? McData.Block("stone") : SrWorld.MinedBlock(t.Hit, out terrainOre);
+                terrainPoint = t.Point; terrainNormal = t.Normal;
+                terrainBlock = SrWorld.MinedBlock(t.Hit, out terrainOre);
             }
             if (terrainBlock == null) return;
             View.I?.Swing();
             float delta = GameMode.Creative ? 1f : Mining.Delta(terrainBlock, held);
-            if (outcrop != null) delta = Mathf.Max(delta, Mining.BreakingSpeed(terrainBlock, held) / 1.5f / 30f); // outcrops break even by hand
             progress += delta;
             if (hitSoundTicks++ % 4 == 0) Sounds.Play(Sounds.BlockEvent(terrainBlock.Sound, "hit"), t.Point, 0.25f, 0.5f);
             Particles.Hit(t.Point, t.Normal, terrainBlock.Default);
@@ -401,12 +421,7 @@ namespace SlimeCraft
             {
                 Sounds.Play(Sounds.BlockEvent(terrainBlock.Sound, "break"), t.Point, 1f, 0.8f);
                 Particles.Break(t.Point - t.Normal * 0.5f, terrainBlock.Default);
-                if (outcrop != null)
-                {
-                    outcrop.BreakIntoResources();
-                    Pickups.CollectSoon(t.Point, 3f);
-                }
-                else if (!GameMode.Creative)
+                if (!GameMode.Creative)
                 {
                     foreach (var d in Loot.BlockDrops(terrainBlock.Default, held)) ItemEntity.Spawn(d, t.Point + t.Normal * 0.3f, Random.insideUnitSphere * 0.1f, 0.5f);
                     int xp = Loot.BlockXp(terrainBlock, held);
@@ -511,7 +526,7 @@ namespace SlimeCraft
 
         // ------------------------------------------------------------------------------------------------ use
 
-        private static void Use(Target t, GameObject snTarget, GUIHand hand, bool fresh)
+        private static void Use(Target t, bool fresh)
         {
             var held = Inventory.Held;
             bool sneaking = Motor.Sneaking;
@@ -522,10 +537,15 @@ namespace SlimeCraft
                 var s = BlockWorld.Get(t.Cell);
                 if (s != null && BlockRules.Use(t.Cell, s)) { View.I?.Swing(); return; }
             }
-            // 2. Subnautica's things under the crosshair (buttons, doors, fabricators, lockers, beds, pickups)
-            if (snTarget != null && !t.IsBlock && (held == null || !held.IsMc || held.Item.Block == null || !sneaking))
+            // 2. Slime Rancher actors: feed a slime what it eats, otherwise grab it into the inventory
+            if (t.Actor != null)
             {
-                if (fresh) { GUIHand.Send(snTarget, HandTargetEventType.Click, hand); View.I?.Swing(); }
+                if (fresh)
+                {
+                    bool slime = Identifiable.IsSlime(t.Actor.id) && !Identifiable.IsTarr(t.Actor.id);
+                    if (held != null && held.IsSr && slime && !sneaking && SlimeFood(held.Actor)) Feed(t.Actor.gameObject, held);
+                    else Grab(t.Actor);
+                }
                 return;
             }
             // 3. Minecraft mob interaction (buckets on fish, shears...)
@@ -533,7 +553,7 @@ namespace SlimeCraft
             if (held == null) return;
 
             // 4. the item itself
-            if (held.IsSr) { UseSnItem(held); return; }
+            if (held.IsSr) { UseSrItem(t, held, fresh); return; }
             var id = held.Item.Id;
 
             // armour: right click puts it on
@@ -572,9 +592,9 @@ namespace SlimeCraft
                     if (Motor.FallFlying)
                     {
                         Motor.RocketTicks = 10 * (Mathf.Max(1, held.Flight) + 1) + Random.Range(0, 6) + Random.Range(0, 7);
-                        Sounds.Play("entity.firework_rocket.launch", Player.main.transform.position, 3f);
+                        Sounds.Play("entity.firework_rocket.launch", SrWorld.Eye, 3f);
                         Inventory.ShrinkHeld();
-                        Particles.Rocket(Player.main.transform.position);
+                        Particles.Rocket(SrWorld.Eye);
                     }
                     else if (t.Any) { Projectiles.Firework(t.Point + t.Normal * 0.1f, held.Flight); Inventory.ShrinkHeld(); }
                     return;
@@ -591,7 +611,7 @@ namespace SlimeCraft
                     if (fresh && (Motor.InWater || t.Any && SrWorld.IsWater(t.Point + t.Normal * 0.1f) || t.IsBlock && BlockWorld.Get(t.Cell)?.Block.Id == "water"))
                     {
                         if (t.IsBlock && BlockWorld.Get(t.Cell)?.Block.Id == "water") BlockWorld.Remove(t.Cell);
-                        Sounds.Play("item.bucket.fill", Player.main.transform.position);
+                        Sounds.Play("item.bucket.fill", SrWorld.Eye);
                         ReplaceHeld(ItemStack.Of("water_bucket"));
                     }
                     return;
@@ -629,7 +649,7 @@ namespace SlimeCraft
                 case "glass_bottle":
                     if (fresh && (Motor.InWater || t.Any && SrWorld.IsWater(t.Point)))
                     {
-                        Sounds.Play("item.bottle.fill", Player.main.transform.position);
+                        Sounds.Play("item.bottle.fill", SrWorld.Eye);
                         Inventory.ShrinkHeld();
                         Inventory.Add(new ItemStack(McData.Item("potion")) { Potion = "water" });
                     }
@@ -740,7 +760,7 @@ namespace SlimeCraft
             }
             else
             {
-                // on Subnautica geometry: the cell just off the surface, on the side the ray came from
+                // on Slime Rancher geometry: the cell just off the surface, on the side the ray came from
                 cell = BlockWorld.CellAt(t.Point + t.Normal * 0.01f);
                 var n = t.Normal;
                 float ax = Mathf.Abs(n.x), ay = Mathf.Abs(n.y), az = Mathf.Abs(n.z);
@@ -751,7 +771,7 @@ namespace SlimeCraft
             var existing = BlockWorld.Get(cell);
             var block = BlockRules.BlockFor(held.Item, side);
             if (existing != null && !existing.Block.Replaceable && existing.Block != block) return;
-            var ctx = new PlaceCtx { Cell = cell, Side = side, Hit = t.Point, Look = BlockRules.McLook(MainCamera.camera.transform.forward), Sneaking = Motor.Sneaking };
+            var ctx = new PlaceCtx { Cell = cell, Side = side, Hit = t.Point, Look = BlockRules.McLook(Camera.main.transform.forward), Sneaking = Motor.Sneaking };
             var s = BlockRules.PlacementState(block, ctx);
             if (s == null) return;
             // concrete powder turns to concrete in water, like ConcretePowderBlock
@@ -765,7 +785,7 @@ namespace SlimeCraft
                 var cols = Physics.OverlapBox(wb.center, wb.extents * 0.98f, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
                 foreach (var c in cols)
                 {
-                    if (c.transform.IsChildOf(Player.main.transform) || c.GetComponentInParent<Creature>() != null || c.GetComponentInParent<Mob>() != null || c.GetComponentInParent<Vehicle>() != null) return;
+                    if (c.gameObject.layer == 8 || c.GetComponentInParent<Identifiable>() != null || c.GetComponentInParent<Mob>() != null) return;
                 }
             }
             BlockWorld.Set(cell, s, false);
@@ -777,13 +797,71 @@ namespace SlimeCraft
             Inventory.ShrinkHeld();
         }
 
-        private static void UseSnItem(ItemStack held)
+        /// <summary>A held Slime Rancher thing: put it down where you aim, or eat a fruit or veggie in the air.</summary>
+        private static void UseSrItem(Target t, ItemStack held, bool fresh)
         {
-            if (!Hunger.CanEat(true)) return;
-            var info = SrFood.Get(held.Actor);
-            if (info == null) return;
-            if (info.Food <= 0 && info.Water <= 0) return;
-            StartUse(info.Food <= 0 ? "drink" : "eat", 32);
+            if (!fresh) return;
+            if (t.Any && t.Distance <= Reach)
+            {
+                PutDown(held, t.Point, t.Normal);
+                return;
+            }
+            if (SrItems.Edible(held.Actor) && Hunger.CanEat(false)) StartUse("eat", 32);
+        }
+
+        /// <summary>What slimes eat (and what makes largos): food, chickens, and plorts of other kinds.</summary>
+        private static bool SlimeFood(Identifiable.Id food)
+        {
+            return Identifiable.IsFood(food) || Identifiable.IsPlort(food) || Identifiable.IsChick(food) || Identifiable.IsAnimal(food);
+        }
+
+        /// <summary>Right click on a Slime Rancher actor: into the inventory, like the vacpack did.</summary>
+        private static void Grab(Identifiable actor)
+        {
+            var id = actor.id;
+            var vac = actor.GetComponent<Vacuumable>();
+            if (vac == null || !vac.enabled || vac.isCaptive()) return;
+            var stack = new ItemStack(id, 1);
+            if (!Inventory.CanFit(stack)) return;
+            SrModels.Capture(actor.gameObject, id);
+            var pos = actor.transform.position;
+            Destroyer.DestroyActor(actor.gameObject, "SlimeCraft.Grab");
+            Inventory.Add(stack);
+            TutorialPatches.Vac(id);
+            View.I?.Swing();
+            Hud.ShowItemName();
+            Sounds.Play("entity.item.pickup", pos, 0.2f, ((Random.value - Random.value) * 0.7f + 1f) * 2f);
+            if (Identifiable.IsSlime(id)) Sounds.Play(Identifiable.IsLargo(id) ? "entity.slime.squish" : "entity.slime.squish_small", pos, 0.6f, Random.Range(0.9f, 1.3f));
+        }
+
+        /// <summary>Puts a held Slime Rancher actor down on the surface the player aims at, facing the player.</summary>
+        private static void PutDown(ItemStack held, Vector3 point, Vector3 normal)
+        {
+            GameObject prefab = null;
+            try { prefab = SRSingleton<GameContext>.Instance.LookupDirector.GetPrefab(held.Actor); } catch { }
+            if (prefab == null) return;
+            float r = PhysicsUtil.RadiusOfObject(prefab);
+            var cam = Camera.main.transform;
+            var face = Quaternion.LookRotation(Vector3.ProjectOnPlane(-cam.forward, Vector3.up).normalized + Vector3.forward * 0.001f, Vector3.up);
+            var go = SrBridge.Spawn(held.Actor, point + normal * (r + 0.05f), face);
+            if (go == null) return;
+            if (!GameMode.Creative) Inventory.ShrinkHeld();
+            TutorialPatches.Shoot(held.Actor);
+            View.I?.Swing();
+            Sounds.Play(Identifiable.IsSlime(held.Actor) ? "entity.slime.squish_small" : "block.grass.place", go.transform.position, 0.8f, Random.Range(0.9f, 1.1f));
+        }
+
+        /// <summary>Drops the food right in front of the slime's mouth; Slime Rancher's own appetite does the rest.</summary>
+        private static void Feed(GameObject slime, ItemStack food)
+        {
+            var mouth = slime.transform.position + slime.transform.forward * 0.55f + Vector3.up * 0.25f;
+            var go = SrBridge.Spawn(food.Actor, mouth, Quaternion.identity);
+            if (go == null) return;
+            var rb = go.GetComponent<Rigidbody>();
+            if (rb != null) rb.velocity = (slime.transform.position - mouth).normalized * 1.5f;
+            if (!GameMode.Creative) Inventory.ShrinkHeld();
+            View.I?.Swing();
+            Sounds.Play("entity.item.pickup", mouth, 0.2f, 1.6f);
         }
 
         private static void StartUse(string action, int max)
@@ -809,16 +887,16 @@ namespace SlimeCraft
                 // LivingEntity.tickItemStackUsage: eating sounds and particles every 4 ticks after the first 7
                 if (UseTicksLeft <= 25 && UseTicksLeft % 4 == 0)
                 {
-                    if (UseAction == "eat") { Sounds.Play("entity.generic.eat", Player.main.transform.position, 0.5f + 0.5f * Random.Range(0, 2), (Random.value - Random.value) * 0.2f + 1f); Particles.Eat(held); }
-                    else Sounds.Play(held.Is("honey_bottle") ? "item.honey_bottle.drink" : "entity.generic.drink", Player.main.transform.position, 0.5f, Random.value * 0.1f + 0.9f);
+                    if (UseAction == "eat") { Sounds.Play("entity.generic.eat", SrWorld.Eye, 0.5f + 0.5f * Random.Range(0, 2), (Random.value - Random.value) * 0.2f + 1f); Particles.Eat(held); }
+                    else Sounds.Play(held.Is("honey_bottle") ? "item.honey_bottle.drink" : "entity.generic.drink", SrWorld.Eye, 0.5f, Random.value * 0.1f + 0.9f);
                 }
                 if (UseTicksLeft <= 0) { FinishUse(held); StopUsing(); }
             }
             else if (UseAction == "crossbow")
             {
                 float pull = CrossbowPullTime(held);
-                if (UseElapsed == (int)(pull * 0.2f)) Sounds.Play("item.crossbow.loading_start", Player.main.transform.position);
-                if (UseElapsed == (int)pull) Sounds.Play("item.crossbow.loading_end", Player.main.transform.position);
+                if (UseElapsed == (int)(pull * 0.2f)) Sounds.Play("item.crossbow.loading_start", SrWorld.Eye);
+                if (UseElapsed == (int)pull) Sounds.Play("item.crossbow.loading_end", SrWorld.Eye);
             }
         }
 
@@ -858,18 +936,10 @@ namespace SlimeCraft
         {
             if (held.IsSr)
             {
-                var info = SrFood.Get(held.Actor);
-                if (info != null)
-                {
-                    var sv = Player.main.GetComponent<Survival>();
-                    sv.food = Mathf.Clamp(sv.food + info.Food, 0, 200f);
-                    sv.water = Mathf.Clamp(sv.water + info.Water, 0, 100f);
-                    Hunger.Saturation = Mathf.Min(Hunger.Saturation + Mathf.Max(0, info.Food) / 5f * 0.6f * 2f, Hunger.Food);
-                    if (info.Health > 0) Health.Heal(info.Health / Health.Scale);
-                    Sounds.Play("entity.player.burp", Player.main.transform.position, 0.5f, Random.value * 0.1f + 0.9f);
-                    if (!GameMode.Creative) Inventory.ShrinkHeld();
-                    if (held.Actor == Identifiable.Id.FilteredWater || held.Actor == Identifiable.Id.BigFilteredWater || held.Actor == Identifiable.Id.DisinfectedWater) { }
-                }
+                // A Slime Rancher fruit or veggie fills like a Minecraft apple or carrot.
+                Hunger.Eat(4, 0.3f);
+                Sounds.Play("entity.player.burp", SrWorld.Eye, 0.5f, Random.value * 0.1f + 0.9f);
+                if (!GameMode.Creative) Inventory.ShrinkHeld();
                 return;
             }
             var id = held.Item.Id;
@@ -877,12 +947,10 @@ namespace SlimeCraft
             {
                 var f = held.Item.Food;
                 Hunger.Eat(f.Hunger, f.Saturation);
-                // Minecraft foods with water in them help Subnautica's thirst a little
-                if (id == "melon_slice" || id == "sweet_berries" || id == "glow_berries" || id == "apple" || id.EndsWith("_stew") || id.EndsWith("_soup")) Hunger.Drink(id.EndsWith("_stew") || id.EndsWith("_soup") ? 15f : 5f);
                 foreach (var e in f.Effects) if (Random.value < e.Chance) Effects.Add(e.Effect, e.Duration, e.Amplifier);
-                if (id == "chorus_fruit") Teleport.Random(Player.main, 8f);
+                if (id == "chorus_fruit") Teleport.Random(8f);
                 if (id == "honey_bottle") Effects.Remove("poison");
-                Sounds.Play("entity.player.burp", Player.main.transform.position, 0.5f, Random.value * 0.1f + 0.9f);
+                Sounds.Play("entity.player.burp", SrWorld.Eye, 0.5f, Random.value * 0.1f + 0.9f);
                 if (!GameMode.Creative)
                 {
                     Inventory.ShrinkHeld();
@@ -899,7 +967,6 @@ namespace SlimeCraft
             }
             if (id == "potion")
             {
-                if (held.Potion == "water") Hunger.Drink(30f); // a bottle of water quenches Subnautica's thirst
                 if (held.Potion != null && McData.Potions.TryGetValue(held.Potion, out var list))
                     foreach (var e in list) Effects.Add(e.Effect, e.Duration, e.Amplifier);
                 if (!GameMode.Creative) { Inventory.ShrinkHeld(); Inventory.Add(ItemStack.Of("glass_bottle")); }
@@ -908,7 +975,7 @@ namespace SlimeCraft
 
         // ------------------------------------------------------------------------------------------------ misc
 
-        /// <summary>Q / A drops one (Ctrl: the stack). Subnautica items come out as the real thing (a fish swims off).</summary>
+        /// <summary>A / Q drops one (Ctrl: the stack). Slime Rancher things come out as the real actor, thrown.</summary>
         public static void Drop(bool all)
         {
             var h = Inventory.Held;
@@ -924,12 +991,15 @@ namespace SlimeCraft
         /// <summary>PlayerEntity.dropItem velocity: 0.3 along the look, slight random spread.</summary>
         public static void Throw(ItemStack s)
         {
-            var cam = MainCamera.camera.transform;
+            var cam = Camera.main.transform;
             var at = cam.position - Vector3.up * 0.3f;
             if (s.IsSr)
             {
-                if (!SrBridge.IsVirtual(s.Actor)) { SrBridge.TakeReal(s.Actor, s.Count, false); return; }
-                UWE.CoroutineHost.StartCoroutine(SpawnSn(s.Actor, s.Count, at + cam.forward * 0.5f, cam.forward * 3f));
+                // 0.3 blocks per tick along the look, like an item toss; counts as shot by Beatrix (silos, market)
+                var c = SrWorld.Controller;
+                SrBridge.SpawnStack(s, at + cam.forward * 0.6f, cam.forward * 6f + Vector3.up * 2f + (c != null ? c.Velocity : Vector3.zero), true);
+                TutorialPatches.Shoot(s.Actor);
+                Sounds.Play("entity.item.pickup", at, 0.2f, 0.8f);
                 return;
             }
             var look = cam.forward;
@@ -938,31 +1008,14 @@ namespace SlimeCraft
             ItemEntity.Spawn(s, at, vel, 2f);
         }
 
-        public static System.Collections.IEnumerator SpawnSn(Identifiable.Id t, int n, Vector3 at, Vector3 vel)
-        {
-            for (int i = 0; i < n; i++)
-            {
-                var task = CraftData.GetPrefabForTechTypeAsync(t);
-                yield return task;
-                var prefab = task.GetResult();
-                if (prefab == null) yield break;
-                var go = Object.Instantiate(prefab, at + Random.insideUnitSphere * 0.2f, Quaternion.identity);
-                go.SetActive(true);
-                var rb = go.GetComponent<Rigidbody>();
-                if (rb != null) { rb.isKinematic = false; rb.velocity = vel; }
-                var lwe = go.GetComponent<LargeWorldEntity>();
-                if (lwe != null && LargeWorld.main != null) LargeWorld.main.streamer.cellManager.RegisterEntity(lwe);
-            }
-        }
-
-        /// <summary>Middle click: in creative the block (or the targeted Subnautica thing) into the hand, in survival select it from the hotbar.</summary>
+        /// <summary>Middle click: in creative the block (or the targeted Slime Rancher thing) into the hand, in survival select it from the hotbar.</summary>
         private static void PickBlock()
         {
             var t = Current;
             ItemStack want = null;
             if (t.IsBlock) { var s = BlockWorld.Get(t.Cell); if (s?.Block.Item != null) want = new ItemStack(s.Block.Item); }
             else if (t.Mob != null) want = ItemStack.Of(t.Mob.Type + "_spawn_egg");
-            else if (t.SnObject != null) { var tt = CraftData.GetTechType(t.SnObject); if (tt != Identifiable.Id.NONE) want = new ItemStack(tt); }
+            else if (t.Actor != null) want = new ItemStack(t.Actor.id);
             if (want == null) return;
             for (int i = 0; i < 9; i++) if (Inventory.Main[i] != null && Inventory.Main[i].SameItem(want)) { Select(i); return; }
             if (!GameMode.Creative)
@@ -978,7 +1031,6 @@ namespace SlimeCraft
             if (slot < 0) slot = Inventory.Selected;
             Select(slot);
             want.Count = want.MaxStack;
-            if (want.IsSr) { Inventory.Held = null; if (!SrBridge.IsVirtual(want.Actor)) { SrBridge.GiveReal(want.Actor, 1); return; } }
             Inventory.Held = want;
         }
 
@@ -987,83 +1039,13 @@ namespace SlimeCraft
             var a = Inventory.Held; Inventory.Held = Inventory.Offhand; Inventory.Offhand = a;
         }
 
-        public static void TestAttack() { if (Current.Any) Attack(Current); }
+        public static void TestAttack() { Current = Raycast(); if (Current.Any) Attack(Current); }
+        public static void TestUse() { Current = Raycast(); Use(Current, true); }
     }
 
-    /// <summary>Subnautica's left / right hand inputs are ours unless a Subnautica tool is held.</summary>
-    [HarmonyPatch]
-    internal static class HandInputPatches
-    {
-        [HarmonyPatch(typeof(GUIHand), "GetInput"), HarmonyPrefix]
-        private static bool Input(GameInput.Button button, ref bool __result)
-        {
-            if (!Game.Active || Motor.SuspendedByGame) return true;
-            if (button != GameInput.Button.LeftHand && button != GameInput.Button.RightHand && button != GameInput.Button.AltTool) return true;
-            var held = Inventory.Held;
-            bool snTool = held != null && held.IsSr && SrItems.IsTool(held.Actor) && SrBridge.HeldTool != null;
-            if (snTool && !(button == GameInput.Button.RightHand && Interaction.SuppressSnRight)) return true;
-            __result = false;
-            return false;
-        }
-    }
-
-    /// <summary>Food values of Subnautica items (from their prefab's Eatable), fetched once.</summary>
-    public static class SrFood
-    {
-        public class Info { public float Food, Water, Health; }
-        private static readonly Dictionary<Identifiable.Id, Info> cache = new Dictionary<Identifiable.Id, Info>();
-        private static readonly HashSet<Identifiable.Id> loading = new HashSet<Identifiable.Id>();
-
-        public static Info Get(Identifiable.Id t)
-        {
-            if (cache.TryGetValue(t, out var i)) return i;
-            if (loading.Add(t)) UWE.CoroutineHost.StartCoroutine(Load(t));
-            return null;
-        }
-
-        public static void Prefetch(Identifiable.Id t) => Get(t);
-
-        private static System.Collections.IEnumerator Load(Identifiable.Id t)
-        {
-            var task = CraftData.GetPrefabForTechTypeAsync(t, false);
-            yield return task;
-            var prefab = task.GetResult();
-            Info info = null;
-            if (prefab != null)
-            {
-                var e = prefab.GetComponent<Eatable>();
-                if (e != null) info = new Info { Food = e.foodValue, Water = e.waterValue };
-                if (t == Identifiable.Id.FirstAidKit) info = new Info { Health = 50f };
-            }
-            cache[t] = info;
-        }
-    }
-
-    /// <summary>Picks up Subnautica resources that just fell out of a broken outcrop when the player walks over them.</summary>
+    /// <summary>Kept for the engine's tick list; Slime Rancher has no loose resources to sweep up.</summary>
     public static class Pickups
     {
-        private static readonly List<KeyValuePair<Vector3, float>> zones = new List<KeyValuePair<Vector3, float>>();
-        private static readonly HashSet<Pickupable> known = new HashSet<Pickupable>();
-
-        public static void CollectSoon(Vector3 at, float radius) => zones.Add(new KeyValuePair<Vector3, float>(at, Time.time + 15f));
-
-        public static void Update()
-        {
-            if (zones.Count == 0 || Player.main == null) return;
-            zones.RemoveAll(z => Time.time > z.Value);
-            var feet = Player.main.transform.position - Vector3.up * Motor.EyeHeight;
-            foreach (var z in zones)
-            {
-                foreach (var c in Physics.OverlapSphere(z.Key, 3f, ~0, QueryTriggerInteraction.Collide))
-                {
-                    var pk = c.GetComponentInParent<Pickupable>();
-                    if (pk == null || !pk.isPickupable || !pk.gameObject.activeInHierarchy) continue;
-                    var lm = pk.GetComponent<LiveMixin>();
-                    if (lm != null && lm.IsAlive()) continue;
-                    var d = pk.transform.position - (feet + Vector3.up * 0.9f);
-                    if (Mathf.Abs(d.x) < 1.3f && Mathf.Abs(d.z) < 1.3f && d.y > -1.4f && d.y < 1.4f) global::Inventory.main.Pickup(pk);
-                }
-            }
-        }
+        public static void Update() { }
     }
 }

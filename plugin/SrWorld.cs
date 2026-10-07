@@ -25,6 +25,16 @@ namespace SlimeCraft
         /// <summary>The player's eyes, at Minecraft's eye height for the current pose.</summary>
         public static Vector3 Eye => Feet + Vector3.up * Motor.EyeHeight;
 
+        /// <summary>Frees the mouse for a Minecraft screen (and stops Slime Rancher's mouse look), or captures it again.</summary>
+        public static void FreeCursor(bool free)
+        {
+            var input = Player != null ? Player.GetComponent<vp_FPInput>() : null;
+            if (input != null) { input.MouseCursorForced = free; input.MouseCursorBlocksMouseLook = true; }
+            vp_Utility.LockCursor = !free;
+            Cursor.visible = free;
+            if (free) Cursor.lockState = CursorLockMode.None;
+        }
+
         /// <summary>Moves the player's feet somewhere else (commands, ender pearls, chorus fruit, respawn).</summary>
         public static void Teleport(Vector3 feet)
         {

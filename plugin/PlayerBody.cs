@@ -127,7 +127,7 @@ namespace SlimeCraft
                 float k = Mathf.Clamp01(j * j / 100f);
                 rot = rot * Quaternion.AngleAxis(-(k * (-90f - pitchDeg)), Vector3.right);
                 // roll into turns: the angle between where we look and where we fly
-                var look = MainCamera.camera.transform.forward; var vel = Motor.Vel;
+                var look = Camera.main.transform.forward; var vel = Motor.Vel;
                 float d = vel.x * vel.x + vel.z * vel.z, e = look.x * look.x + look.z * look.z;
                 if (d > 0 && e > 0)
                 {

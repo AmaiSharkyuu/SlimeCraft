@@ -38,14 +38,14 @@ namespace SlimeCraft
         public static void OpenChat(string prefix)
         {
             Open = true; input = prefix; caret = input.Length; histIndex = -1; scroll = 0; openedFrame = Time.frameCount;
-            UWE.Utils.lockCursor = false;
+            SrWorld.FreeCursor(true);
             UpdateSuggestions();
         }
 
         public static void Close()
         {
             Open = false; input = ""; suggestions.Clear();
-            UWE.Utils.lockCursor = true;
+            SrWorld.FreeCursor(false);
         }
 
         /// <summary>Text input runs in OnGUI so characters come with the right keyboard layout.</summary>
@@ -190,7 +190,7 @@ namespace SlimeCraft
             if (itemIds != null) return itemIds;
             itemIds = new List<string>();
             foreach (var d in McData.ItemList) itemIds.Add("minecraft:" + d.Id);
-            foreach (Identifiable.Id t in global::System.Enum.GetValues(typeof(Identifiable.Id))) if (t != Identifiable.Id.NONE) itemIds.Add("subnautica:" + t.ToString().ToLowerInvariant());
+            foreach (Identifiable.Id t in global::System.Enum.GetValues(typeof(Identifiable.Id))) if (t != Identifiable.Id.NONE) itemIds.Add("slimerancher:" + t.ToString().ToLowerInvariant());
             itemIds = itemIds.Distinct().ToList();
             return itemIds;
         }
@@ -206,7 +206,7 @@ namespace SlimeCraft
         {
             if (entityIds != null) return entityIds;
             entityIds = Mobs.Aquatic.Select(a => "minecraft:" + a).ToList();
-            foreach (var n in SrCreatures.Names) entityIds.Add("subnautica:" + n);
+            foreach (var n in SrCreatures.Names) entityIds.Add("slimerancher:" + n);
             return entityIds;
         }
 
@@ -254,7 +254,7 @@ namespace SlimeCraft
 
         private static string Strip(string id) => id.Replace("minecraft:", "");
 
-        private static Vector3 Feet() => Player.main.transform.position - Vector3.up * Motor.EyeHeight;
+        private static Vector3 Feet() => SrWorld.Feet;
 
         /// <summary>Minecraft coordinates (x, y, z with z pointing south, ~ relative to the player) to a Unity point.</summary>
         private static Vector3 Coords(string[] a, int i)
@@ -269,7 +269,7 @@ namespace SlimeCraft
         private static ItemStack ParseItem(string id, int count)
         {
             id = id.ToLowerInvariant();
-            if (id.StartsWith("subnautica:") || id.StartsWith("sn:"))
+            if (id.StartsWith("slimerancher:") || id.StartsWith("sn:"))
             {
                 var name = id.Substring(id.IndexOf(':') + 1);
                 if (SrCreatures.TryGet(name, out var tt)) return new ItemStack(tt, count);
@@ -302,7 +302,7 @@ namespace SlimeCraft
                     else
                     {
                         int left = n;
-                        while (left > 0) { var part = s.Copy(Mathf.Min(left, s.MaxStack)); left -= part.Count; int took = Inventory.Add(part); if (took < part.Count) ItemEntity.Spawn(part.Copy(part.Count - took), Player.main.transform.position, Vector3.zero, 0); }
+                        while (left > 0) { var part = s.Copy(Mathf.Min(left, s.MaxStack)); left -= part.Count; int took = Inventory.Add(part); if (took < part.Count) ItemEntity.Spawn(part.Copy(part.Count - took), SrWorld.Eye, Vector3.zero, 0); }
                     }
                     Sounds.Play("entity.item.pickup", null, 0.2f, ((Random.value - Random.value) * 0.7f + 1f) * 2f);
                     Chat.Add(McData.Tf("commands.give.success.single", n, "[" + s.Name + "]", Chat.PlayerName));
@@ -344,7 +344,7 @@ namespace SlimeCraft
                     int i = a.Length >= 5 ? 2 : 1;
                     if (a.Length < i + 3) { Usage("/tp <x> <y> <z>"); return; }
                     var to = Coords(a, i);
-                    Player.main.SetPosition(to + Vector3.up * Motor.EyeHeight);
+                    SrWorld.Teleport(to);
                     Motor.Vel = Vector3.zero; Motor.FallDistance = 0;
                     Chat.Add(McData.Tf("commands.teleport.success.location.single", Chat.PlayerName, a[i], a[i + 1], a[i + 2]));
                     return;
@@ -410,8 +410,8 @@ namespace SlimeCraft
                 case "summon":
                 {
                     if (a.Length < 2) { Usage("/summon <entité> [x y z]"); return; }
-                    var type = a[1].ToLowerInvariant().Replace("subnautica:", "").Replace("minecraft:", "");
-                    var at = a.Length >= 5 ? Coords(a, 2) : Feet() + MainCamera.camera.transform.forward * 3f + Vector3.up;
+                    var type = a[1].ToLowerInvariant().Replace("slimerancher:", "").Replace("minecraft:", "");
+                    var at = a.Length >= 5 ? Coords(a, 2) : Feet() + Camera.main.transform.forward * 3f + Vector3.up;
                     if (Mobs.Summon(type, at)) Chat.Add(McData.Tf("commands.summon.success", type));
                     else Chat.Add("§c" + McData.Tf("argument.entity.notfound.entity", type));
                     return;

@@ -64,7 +64,7 @@ namespace SlimeCraft
             return hitAny;
         }
 
-        protected virtual bool IgnoreHit(RaycastHit h) => h.collider.transform.IsChildOf(transform) || Player.main != null && h.collider.transform.IsChildOf(Player.main.transform);
+        protected virtual bool IgnoreHit(RaycastHit h) => h.collider.transform.IsChildOf(transform) || SrWorld.Player != null && h.collider.transform.IsChildOf(Player.main.transform);
         protected virtual void OnHit(RaycastHit h) { }
 
         protected bool Grounded() => Physics.SphereCast(transform.position + Vector3.up * 0.05f, Radius * 0.9f, Vector3.down, out var h, 0.08f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) && !IgnoreHit(h);
@@ -148,8 +148,8 @@ namespace SlimeCraft
 
         private void TryPickup()
         {
-            if (pickupDelay > 0 || Screens.Open || Player.main == null || Motor.SuspendedByGame || !Player.main.liveMixin.IsAlive()) return;
-            var feet = Player.main.transform.position - Vector3.up * Motor.EyeHeight;
+            if (pickupDelay > 0 || Screens.Open || SrWorld.Player == null || Motor.SuspendedByGame || !Player.main.liveMixin.IsAlive()) return;
+            var feet = SrWorld.Feet;
             var d = (feet + Vector3.up * 0.9f) - transform.position;
             // the player's box grown by 1 block sideways and 0.5 up and down
             if (Mathf.Abs(d.x) < 1.3f && Mathf.Abs(d.z) < 1.3f && transform.position.y > feet.y - 0.5f && transform.position.y < feet.y + 2.3f)
@@ -287,9 +287,9 @@ namespace SlimeCraft
         protected override void Render(float partial)
         {
             transform.position = Vector3.Lerp(prevPos, curPos, partial);
-            if (quad != null && MainCamera.camera != null)
+            if (quad != null && Camera.main != null)
             {
-                quad.rotation = MainCamera.camera.transform.rotation;
+                quad.rotation = Camera.main.transform.rotation;
                 float t = Age + partial;
                 float g = (Mathf.Sin(t / 2f) + 1f) * 0.5f;
                 quad.GetComponent<MeshRenderer>().material.color = new Color(1f, 1f, g * 0.2f + 0.8f * 0f + 0.3f, 1f);

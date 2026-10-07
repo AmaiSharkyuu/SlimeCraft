@@ -486,7 +486,7 @@ namespace SlimeCraft
             s.OnOpen();
             Interaction.StopMining();
             Interaction.StopUsing(false);
-            UWE.Utils.lockCursor = false;
+            SrWorld.FreeCursor(true);
         }
 
         public static void Close()
@@ -502,13 +502,13 @@ namespace SlimeCraft
                 Inventory.Cursor = null;
             }
             closedFrame = Time.frameCount;
-            UWE.Utils.lockCursor = true;
+            SrWorld.FreeCursor(false);
         }
 
         public static void Update()
         {
             if (Current == null) return;
-            UWE.Utils.lockCursor = false;
+            SrWorld.FreeCursor(true);
             if (Input.GetKeyDown(KeyCode.Escape) || (Input.GetKeyDown(KeyCode.E) && !(Current is CreativeScreen cs && cs.Typing) && !(Current is AnvilScreen an && an.Typing))) { Close(); return; }
             Current.Update();
         }
@@ -713,7 +713,7 @@ namespace SlimeCraft
             int xp = Mathf.FloorToInt(e.Xp);
             if (UnityEngine.Random.value < e.Xp - xp) xp++;
             e.Xp = 0;
-            if (xp > 0) XpOrb.Spawn(Player.main.transform.position, xp);
+            if (xp > 0) XpOrb.Spawn(SrWorld.Eye, xp);
         }
 
         protected override void Click(Slot slot, int button)
@@ -876,7 +876,7 @@ namespace SlimeCraft
                 }
                 diff = now;
             }
-            if (v != null && diff > 0) UWE.CoroutineHost.StartCoroutine(Store(v.Actor, diff));
+            if (v != null && diff > 0) Game.I.StartCoroutine(Store(v.Actor, diff));
             else if (v != null && diff < 0)
                 for (int i = 0; i < -diff; i++) { var p = storage.container.RemoveItem(v.Actor); if (p != null) { if (SrBridge.IsVirtual(v.Actor)) UnityEngine.Object.Destroy(p.gameObject); else global::Inventory.main.container.UnsafeAdd(new InventoryItem(p)); } }
             view[k] = v;

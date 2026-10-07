@@ -105,7 +105,7 @@ namespace SlimeCraft
         /// <summary>Eating: bits of the food in front of the mouth (LivingEntity.spawnConsumptionEffects).</summary>
         public static void Eat(ItemStack s)
         {
-            var cam = MainCamera.camera.transform;
+            var cam = Camera.main.transform;
             var at = cam.position + cam.forward * 0.6f - cam.up * 0.3f;
             var tex = ItemRender.Icon(s, out var uv);
             for (int i = 0; i < 5; i++)
@@ -114,8 +114,8 @@ namespace SlimeCraft
 
         public static void ItemBreak(ItemStack s)
         {
-            if (Player.main == null || s == null) return;
-            var cam = MainCamera.camera.transform;
+            if (SrWorld.Player == null || s == null) return;
+            var cam = Camera.main.transform;
             ItemCrack(cam.position + cam.forward * 0.6f - cam.up * 0.3f, s, 5);
         }
 
@@ -171,7 +171,7 @@ namespace SlimeCraft
 
         public static void Update()
         {
-            if (live.Count == 0 || MainCamera.camera == null) return;
+            if (live.Count == 0 || Camera.main == null) return;
             acc += Time.deltaTime;
             while (acc >= 0.05f)
             {
@@ -200,7 +200,7 @@ namespace SlimeCraft
                 Object.DontDestroyOnLoad(mesh);
             }
             if (block == null) block = new MaterialPropertyBlock();
-            var rot = MainCamera.camera.transform.rotation;
+            var rot = Camera.main.transform.rotation;
             float pt = acc / 0.05f;
             foreach (var p in live)
             {
@@ -250,7 +250,7 @@ namespace SlimeCraft
         {
             if (bobber != null) { Reel(); return; }
             rod = r;
-            var cam = MainCamera.camera.transform;
+            var cam = Camera.main.transform;
             bobber = new GameObject("mc bobber");
             bobber.transform.position = cam.position + cam.forward * 0.5f;
             var vis = new GameObject("vis");
@@ -275,13 +275,13 @@ namespace SlimeCraft
         public static void Tick()
         {
             if (bobber == null) return;
-            if (Inventory.Held != rod || Player.main == null || (bobber.transform.position - Player.main.transform.position).sqrMagnitude > 32 * 32) { Remove(); return; }
+            if (Inventory.Held != rod || SrWorld.Player == null || (bobber.transform.position - SrWorld.Eye).sqrMagnitude > 32 * 32) { Remove(); return; }
             var p = bobber.transform.position;
             bool water = SrWorld.IsWater(p);
             if (water)
             {
                 vel *= 0.9f;
-                vel.y += (Ocean.GetOceanLevel() - p.y > 0.2f ? 0.04f : 0f) - 0.01f;
+                vel.y += (SrWorld.WaterLevelAt(transform.position) - p.y > 0.2f ? 0.04f : 0f) - 0.01f;
                 if (wait > 0) wait--;
                 else if (biteTicks == 0) { biteTicks = Random.Range(20, 40); Sounds.Play("entity.fishing_bobber.splash", p, 0.25f); Particles.Bubble(p); vel.y -= 0.2f; }
                 else if (--biteTicks == 0) wait = Random.Range(100, 600) - rod.Level("lure") * 100;
@@ -293,8 +293,8 @@ namespace SlimeCraft
                 if (Physics.Linecast(p, p + vel, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) || BlockWorld.Has(BlockWorld.CellAt(p + vel))) vel = Vector3.zero;
             }
             bobber.transform.position = p + vel;
-            if (line != null) { line.SetPosition(0, MainCamera.camera.transform.position + MainCamera.camera.transform.right * 0.3f - MainCamera.camera.transform.up * 0.2f); line.SetPosition(1, bobber.transform.position); }
-            if (MainCamera.camera != null) bobber.transform.GetChild(0).rotation = MainCamera.camera.transform.rotation;
+            if (line != null) { line.SetPosition(0, Camera.main.transform.position + Camera.main.transform.right * 0.3f - Camera.main.transform.up * 0.2f); line.SetPosition(1, bobber.transform.position); }
+            if (Camera.main != null) bobber.transform.GetChild(0).rotation = Camera.main.transform.rotation;
         }
 
         private static void Reel()
@@ -314,9 +314,9 @@ namespace SlimeCraft
                     var drops = Loot.Roll(table, new Loot.Ctx { Tool = rod });
                     catchStack = drops.Count > 0 ? drops[0] : ItemStack.Of(Random.value < 0.6f ? "cod" : "salmon");
                 }
-                var toPlayer = (Player.main.transform.position - at);
+                var toPlayer = (SrWorld.Eye - at);
                 var e = ItemEntity.Spawn(catchStack, at, new Vector3(toPlayer.x * 0.1f, toPlayer.y * 0.1f + Mathf.Sqrt(toPlayer.magnitude) * 0.08f, toPlayer.z * 0.1f), 0f);
-                XpOrb.Spawn(Player.main.transform.position - Vector3.up, Random.Range(1, 7));
+                XpOrb.Spawn(SrWorld.Eye - Vector3.up, Random.Range(1, 7));
                 Inventory.DamageHeld(1);
             }
             Sounds.Play("entity.fishing_bobber.retrieve", at, 1f, 0.4f / (Random.value * 0.4f + 0.8f));

@@ -57,7 +57,7 @@ namespace SlimeCraft
         {
             type = type.Replace("minecraft:", "").ToLowerInvariant();
             if (IsMcMob(type)) { Mob.Create(type, at); return true; }
-            if (SrCreatures.TryGet(type, out var tt)) { UWE.CoroutineHost.StartCoroutine(SpawnSn(tt, at)); return true; }
+            if (SrCreatures.TryGet(type, out var tt)) { Game.I.StartCoroutine(SpawnSn(tt, at)); return true; }
             return false;
         }
 
@@ -105,12 +105,12 @@ namespace SlimeCraft
         /// </summary>
         public static void NaturalSpawn()
         {
-            if (!Spawning || Time.time < nextSpawn || Player.main == null) return;
+            if (!Spawning || Time.time < nextSpawn || SrWorld.Player == null) return;
             nextSpawn = Time.time + 4f;
             int count = 0;
             foreach (var m in All) if (m != null && m.Natural) count++;
             if (count >= 10) return;
-            var p = Player.main.transform.position;
+            var p = SrWorld.Eye;
             var at = p + Random.onUnitSphere * Random.Range(24f, 44f);
             if (!SrWorld.IsWater(at) || Physics.CheckSphere(at, 1f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore)) return;
             float depth = -at.y;
@@ -431,7 +431,7 @@ namespace SlimeCraft
                 wanderTicks = Random.Range(40, 120);
                 wander = Random.onUnitSphere;
                 wander.y *= 0.3f;
-                if (transform.position.y > Ocean.GetOceanLevel() - 1.5f) wander.y = -Mathf.Abs(wander.y) - 0.2f;
+                if (transform.position.y > SrWorld.WaterLevelAt(transform.position) - 1.5f) wander.y = -Mathf.Abs(wander.y) - 0.2f;
                 wander.Normalize();
             }
             Vel += wander * speed * 0.3f;
@@ -542,7 +542,7 @@ namespace SlimeCraft
         {
             if (Health <= 0) return;
             SlimeCraft.Health.Damage(dmg, cause, gameObject);
-            var push = Player.main.transform.position - transform.position;
+            var push = SrWorld.Eye - transform.position;
             Motor.Vel += new Vector3(push.x, 0, push.z).normalized * 0.4f + Vector3.up * (Motor.InWater ? 0 : 0.2f);
         }
 

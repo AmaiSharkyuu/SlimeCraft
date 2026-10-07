@@ -481,7 +481,7 @@ namespace SlimeCraft
                     if (open)
                     {
                         // a gate opens away from the player
-                        var look = HorizontalFacing(McLook(MainCamera.camera.transform.forward));
+                        var look = HorizontalFacing(McLook(Camera.main.transform.forward));
                         if (Opp(ParseDir(s["facing"])) == look) ns = ns.With("facing", N(look));
                     }
                     BlockWorld.Set(c, ns, false);
