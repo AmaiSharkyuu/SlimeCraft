@@ -3,77 +3,90 @@ using UnityEngine;
 namespace SlimeCraft
 {
     /// <summary>
-    /// Everything Minecraft does with the camera and the first-person hand, ported from GameRenderer and
-    /// HeldItemRenderer: view bobbing, hurt tilt, sprint FOV, F5 perspectives, the arm, the held item with its
-    /// equip dip, swing and the lagging look rotation. Runs a 20 Hz "client tick" for state and interpolates
-    /// every frame, like Minecraft.
+    /// Minecraft's camera and first-person hand, ported from GameRenderer and HeldItemRenderer: view bobbing,
+    /// the hurt tilt, sprint / flight / bow FOV, the three F5 perspectives with wall clipping, the arm, the held
+    /// item with its equip dip, swing, look lag, eating / bow / trident / crossbow poses and the model's own display
+    /// transforms. A 20 Hz client tick holds the state and every frame interpolates, like Minecraft.
+    ///
+    /// The camera offsets are applied in the main camera's OnPreCull and taken back in OnPostRender, so game logic
+    /// (aiming, raycasts, Subnautica's tools) always sees the plain, unbobbed eye.
     /// </summary>
     public class View : MonoBehaviour
     {
         public static View I;
 
-        // ---- 20 Hz client state
+        // ---- 20 Hz state
         private float tickAcc;
         public float TickDelta;
         private float prevEquip, equip;
         private string shownKey = "";
         private ItemStack shown;
         private int swingTicks; private bool swinging; private float prevSwing, swing;
-        private int lastAttackedTicks = 100;
+        public int LastAttackedTicks = 100;
         private float renderPitch, prevRenderPitch, renderYaw, prevRenderYaw;
         private float hSpeed, prevHSpeed, stride, prevStride;
-        private int hurtTime; private float lastHealth = -1;
         private float fovMul = 1, prevFovMul = 1;
-        public int UseTicksLeft;  // eating
+        private float camY, prevCamY;
         public int Perspective;   // 0 first person, 1 behind, 2 front
+        public bool HideGui;      // F1
 
         // ---- objects
-        private Transform cam;
-        private Camera camera, weaponCam;
-        private Transform fpRoot, arm, heldRoot;
+        private Transform camT, rig;
+        private Camera cam;
+        private Transform fpRoot, armT, heldRoot, heldPivot;
         private GameObject heldVisual;
-        private SteveBody steve;
-        private GameObject steveHeld;
-        private string steveHeldKey = "";
+        private MPart arm;
+        public PlayerBody Body;
         private float baseFov = -1, lastSetFov = -1;
+        private Vector3 savedRigPos; private Quaternion savedRigRot; private bool applied;
+        public const int HandLayer = 8; // Subnautica's view model layer
+        private bool slim = true;
 
-        private const int WeaponLayer = 31;
+        public static void Create(Player p)
+        {
+            var camGo = MainCamera.camera.gameObject;
+            var v = camGo.GetComponent<View>() ?? camGo.AddComponent<View>();
+            v.Setup(p);
+        }
 
-        public void Setup(GameObject player)
+        private void Setup(Player p)
         {
             I = this;
-            var srCam = player.GetComponentInChildren<SRFPCamera>();
-            cam = srCam.transform;
-            camera = cam.GetComponent<Camera>();
-            var wc = cam.Find("WeaponCamera");
-            if (wc != null) weaponCam = wc.GetComponent<Camera>();
-            if (camera != null) camera.cullingMask &= ~(1 << 30);
-            if (weaponCam != null) weaponCam.cullingMask &= ~(1 << 30);
-
-            fpRoot = new GameObject("SlimeCraft FP").transform;
-            fpRoot.gameObject.layer = WeaponLayer;
-            fpRoot.SetParent(cam, false);
-            arm = SteveMesh.RightArm(fpRoot, WeaponLayer).transform;
-            heldRoot = new GameObject("held").transform;
-            heldRoot.gameObject.layer = WeaponLayer;
-            heldRoot.SetParent(fpRoot, false);
-
-            steve = SteveBody.Create();
-            steve.SetVisible(false);
+            cam = GetComponent<Camera>();
+            camT = transform;
+            rig = camT.parent; // PlayerCameras: the camera's parent, moved for bobbing / F5
+            if (fpRoot != null) Destroy(fpRoot.gameObject);
+            fpRoot = new GameObject("SubnautiCraft FP").transform;
+            fpRoot.gameObject.layer = HandLayer;
+            fpRoot.SetParent(camT, false);
+            var skin = McTex.Get("../amai");
+            arm = Models.RightArm(slim);
+            var armMat = BlockWorld.MakeMat(1, skin);
+            var armHolder = new GameObject("arm holder") { layer = HandLayer };
+            armHolder.transform.SetParent(fpRoot, false);
+            armT = armHolder.transform;
+            arm.Build(armT, armMat, 64, 64, HandLayer);
+            Sky.Apply(fpRoot.gameObject);
+            heldPivot = new GameObject("held pivot") { layer = HandLayer }.transform;
+            heldPivot.SetParent(fpRoot, false);
+            heldRoot = heldPivot;
+            if (Body != null) Destroy(Body.gameObject);
+            Body = PlayerBody.Create(skin, slim);
             renderPitch = prevRenderPitch = Pitch;
             renderYaw = prevRenderYaw = Yaw;
+            camY = prevCamY = Motor.EyeHeight;
         }
 
         private void OnDestroy()
         {
             if (fpRoot != null) Destroy(fpRoot.gameObject);
-            if (steve != null) Destroy(steve.gameObject);
+            if (Body != null) Destroy(Body.gameObject);
             if (I == this) I = null;
         }
 
-        private float Pitch => cam != null ? Mathf.DeltaAngle(0, cam.eulerAngles.x) : 0;
+        public float Pitch => camT != null ? Mathf.DeltaAngle(0, camT.eulerAngles.x) : 0;
         private float yawUnwrapped, lastYawRaw;
-        private float Yaw => yawUnwrapped;
+        public float Yaw => yawUnwrapped;
 
         public void Swing()
         {
@@ -84,15 +97,24 @@ namespace SlimeCraft
             }
         }
 
-        public void ResetAttackCooldown() => lastAttackedTicks = 0;
+        public void ResetAttackCooldown() => LastAttackedTicks = 0;
 
-        /// <summary>Attack strength 0..1, Minecraft's cooldown for an empty hand (attack speed 4: 5 ticks).</summary>
-        public float Cooldown(float delta) => Mathf.Clamp01((lastAttackedTicks + delta) / 5f);
+        /// <summary>PlayerEntity.getAttackCooldownProgress: 0..1, period = 20 / attack speed ticks.</summary>
+        public float Cooldown(float delta)
+        {
+            var h = Inventory.Held;
+            float speed = h != null && h.IsMc ? h.Item.AttackSpeed : 4f;
+            if (Effects.Has("haste")) speed *= 1f + 0.1f * (Effects.Amplifier("haste") + 1);
+            if (Effects.Has("mining_fatigue")) speed *= 1f - 0.1f * (Effects.Amplifier("mining_fatigue") + 1);
+            float period = 20f / Mathf.Max(0.1f, speed);
+            return Mathf.Clamp01((LastAttackedTicks + delta) / period);
+        }
 
         private void Update()
         {
-            if (cam == null) return;
-            float raw = cam.eulerAngles.y;
+            Restore();
+            if (camT == null) return;
+            float raw = camT.eulerAngles.y;
             yawUnwrapped += Mathf.DeltaAngle(lastYawRaw, raw);
             lastYawRaw = raw;
             if (Time.timeScale == 0f) return;
@@ -104,226 +126,188 @@ namespace SlimeCraft
 
         private void ClientTick()
         {
-            lastAttackedTicks++;
-            // swing
+            LastAttackedTicks++;
             prevSwing = swing;
             if (swinging)
             {
                 swingTicks++;
-                if (swingTicks >= 6) { swingTicks = 0; swinging = false; }
+                int dur = SwingDuration();
+                if (swingTicks >= dur) { swingTicks = 0; swinging = false; }
             }
             else swingTicks = 0;
-            swing = swingTicks / 6f;
+            swing = swingTicks / (float)SwingDuration();
 
-            // equip: lower to swap items, and dip after every attack (f^3 of the cooldown)
+            // equip: lower the hand to swap items, and dip after every attack (cooldown cubed)
             prevEquip = equip;
             var held = Inventory.Held;
             var key = KeyOf(held);
             float f = Cooldown(1f);
-            equip += Mathf.Clamp((key == shownKey ? f * f * f : 0f) - equip, -0.4f, 0.4f);
-            if (equip < 0.1f && key != shownKey) { shownKey = key; shown = held; RebuildHeld(); }
-            if (key == shownKey) shown = held;
+            bool same = key == shownKey;
+            equip += Mathf.Clamp((same ? f * f * f : 0f) - equip, -0.4f, 0.4f);
+            if (equip < 0.1f && !same) { shownKey = key; shown = held; RebuildHeld(); }
+            if (same) shown = held;
+            if (same && held != null && shown != null && RebuildForUse()) RebuildHeld();
 
-            // look lag
             prevRenderPitch = renderPitch; prevRenderYaw = renderYaw;
             renderPitch += (Pitch - renderPitch) * 0.5f;
             renderYaw += (Yaw - renderYaw) * 0.5f;
 
-            // bobbing
             prevHSpeed = hSpeed; prevStride = stride;
             hSpeed += Motor.HorizontalTickSpeed * 0.6f;
-            float target = Motor.OnGround ? Mathf.Min(0.1f, Motor.HorizontalTickSpeed) : 0f;
+            float target = Motor.OnGround && !Motor.InWater ? Mathf.Min(0.1f, Motor.HorizontalTickSpeed) : 0f;
             stride += (target - stride) * 0.4f;
 
-            // limbs for the third-person body
-            if (steve != null)
-            {
-                steve.PrevLimbDistance = steve.LimbDistance;
-                float sp = Mathf.Min(Motor.HorizontalTickSpeed * 4f, 1f);
-                steve.LimbDistance += (sp - steve.LimbDistance) * 0.4f;
-                steve.LimbAngle += steve.LimbDistance;
-            }
+            if (Body != null) Body.Tick();
 
-            // hurt tilt when Slime Rancher took health away
-            var ps = SRSingleton<SceneContext>.Instance?.PlayerState;
-            if (ps != null)
-            {
-                float h = ps.GetCurrHealth();
-                if (lastHealth >= 0 && h < lastHealth - 0.5f) { hurtTime = 10; McSound.Play("damage/hit", cam.position, 1f, 1f); }
-                lastHealth = h;
-            }
-            if (hurtTime > 0) hurtTime--;
-
-            // sprint FOV
+            // FOV: AbstractClientPlayerEntity.getFovMultiplier
             prevFovMul = fovMul;
-            float fm = Motor.Sprinting ? 1.15f : 1f;
+            float fm = 1f;
+            if (Motor.Flying) fm *= 1.1f;
+            fm *= (Effects.SpeedMultiplier() * (Motor.Sprinting ? 1.3f : 1f) / 1f + 1f) / 2f;
+            if (Interaction.Using && Interaction.UseAction == "bow")
+            {
+                float g = Interaction.UseElapsed / 20f;
+                g = g > 1f ? 1f : g * g;
+                fm *= 1f - g * 0.15f;
+            }
             fovMul += (fm - fovMul) * 0.5f;
 
-            if (UseTicksLeft > 0) Interaction.EatTick(--UseTicksLeft);
+            prevCamY = camY;
+            camY += (Motor.EyeHeight - camY) * 0.5f;
         }
 
-        private static string KeyOf(ItemStack s) => s == null ? "" : s.IsBlock ? "b" + s.Block.Id : "a" + s.Actor;
+        /// <summary>LivingEntity.getHandSwingDuration: 6 ticks, faster with Haste, slower with Mining Fatigue.</summary>
+        private static int SwingDuration()
+        {
+            if (Effects.Has("haste")) return 6 - (1 + Effects.Amplifier("haste"));
+            if (Effects.Has("mining_fatigue")) return 6 + (1 + Effects.Amplifier("mining_fatigue")) * 2;
+            return 6;
+        }
 
-        // ------------------------------------------------------------------------------------------------ held
+        private static string KeyOf(ItemStack s) => s == null ? "" : s.Id + "|" + s.Damage + "|" + (s.Enchanted ? "e" : "") + s.Potion + s.Color + (s.IsSn ? (SnModels.Ready(s.Tech) ? "3d" : SnModels.Failed(s.Tech) ? "icon" : "?") : "");
+
+        private string lastUseModel;
+
+        private bool RebuildForUse()
+        {
+            if (shown == null || !shown.IsMc || shown.Item.Overrides.Count == 0) return false;
+            var m = ItemRender.ModelName(shown, Interaction.Predicates(shown));
+            if (m == lastUseModel) return false;
+            return true;
+        }
 
         private void RebuildHeld()
         {
             if (heldVisual != null) Destroy(heldVisual);
             heldVisual = null;
+            lastUseModel = null;
             if (shown == null) return;
-            heldVisual = BuildVisual(shown, heldRoot, WeaponLayer, out _);
+            var pred = Interaction.Predicates(shown);
+            if (shown.IsMc) lastUseModel = ItemRender.ModelName(shown, pred);
+            heldVisual = ItemRender.Build(shown, heldRoot, HandLayer, "firstperson_righthand", pred);
+            ActorLayer(heldVisual, HandLayer);
+            Sky.Apply(fpRoot.gameObject);
         }
 
-        /// <summary>Visual for any stack: a real Minecraft block mesh, or the real Slime Rancher actor normalised to a 1 m box.</summary>
-        public static GameObject BuildVisual(ItemStack s, Transform parent, int layer, out bool isSprite)
+        private static void ActorLayer(GameObject go, int layer)
         {
-            isSprite = false;
-            var holder = new GameObject("visual");
-            holder.transform.SetParent(parent, false);
-            if (s.IsBlock)
-            {
-                var d = s.Block;
-                var mf = holder.AddComponent<MeshFilter>();
-                var mr = holder.AddComponent<MeshRenderer>();
-                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                if (d.IsSprite)
-                {
-                    // Plants and torches are flat extruded sprites in the hand, like Minecraft's item/generated.
-                    mf.sharedMesh = SpriteMesh.Extrude(Blocks.TexOf(d.Side));
-                    mr.sharedMaterial = Blocks.Mat(d.Side, BlockRender.Cutout);
-                    isSprite = true;
-                }
-                else
-                {
-                    switch (d.Shape)
-                    {
-                        case BlockShape.Fence: mf.sharedMesh = Blocks.FenceMesh(false, false, true, true); break;
-                        case BlockShape.Slab: mf.sharedMesh = Blocks.SlabMesh(false); break;
-                        case BlockShape.Stairs: mf.sharedMesh = Blocks.StairsMesh(false); break;
-                        case BlockShape.Carpet: mf.sharedMesh = Blocks.CarpetMesh(); break;
-                        case BlockShape.Chest: mf.sharedMesh = Blocks.ChestBase(); break;
-                        case BlockShape.Shulker: mf.sharedMesh = Blocks.ShulkerBase(); break;
-                        default: mf.sharedMesh = Blocks.CubeMesh(); break;
-                    }
-                    mr.sharedMaterials = Blocks.MatsFor(d);
-                    if (d.Shape == BlockShape.Chest || d.Shape == BlockShape.Shulker)
-                    {
-                        var lid = new GameObject("lid");
-                        lid.transform.SetParent(holder.transform, false);
-                        if (d.Shape == BlockShape.Chest) lid.transform.localPosition = new Vector3(0, 9f / 16f - 0.5f, 1f / 16f - 0.5f);
-                        lid.AddComponent<MeshFilter>().sharedMesh = d.Shape == BlockShape.Chest ? Blocks.ChestLid() : Blocks.ShulkerLid();
-                        var lr = lid.AddComponent<MeshRenderer>();
-                        lr.sharedMaterials = mr.sharedMaterials;
-                        lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                    }
-                }
-            }
-            else
-            {
-                var v = ActorVisuals.Make(s.Actor, holder.transform);
-                if (v != null)
-                {
-                    float r = Mathf.Max(0.05f, ActorVisuals.Radius(v));
-                    var b = new Bounds(v.transform.position, Vector3.zero);
-                    bool any = false;
-                    foreach (var rr in v.GetComponentsInChildren<Renderer>())
-                    {
-                        if (rr is ParticleSystemRenderer) continue;
-                        if (!any) { b = rr.bounds; any = true; } else b.Encapsulate(rr.bounds);
-                    }
-                    float k = 0.5f / r;
-                    v.transform.localScale *= k;
-                    v.transform.localPosition = -(b.center - holder.transform.position) * k;
-                }
-            }
-            ActorVisuals.SetLayer(holder, layer);
-            return holder;
+            foreach (var t in go.GetComponentsInChildren<Transform>(true)) t.gameObject.layer = layer;
         }
 
         // ------------------------------------------------------------------------------------------------ frame
 
-        /// <summary>Called after Slime Rancher's camera has placed itself for the frame.</summary>
-        public void AfterCamera(vp_FPController controller)
+        private Vector3 InterpolatedEyeOffset()
         {
-            if (cam == null || controller == null) return;
-            if (Time.timeScale == 0f && !Screens.Open) return;
+            // the player moves smoothly every frame; only the eye height eases over a few ticks (sneaking)
+            float y = Mathf.Lerp(prevCamY, camY, TickDelta) - Motor.EyeHeight;
+            return Vector3.up * y;
+        }
+
+        private void OnPreCull()
+        {
+            if (!Game.Active || rig == null || Player.main == null) return;
+            if (Motor.SuspendedByGame) { HideFp(true); if (Body != null) Body.SetVisible(false, false); return; }
+            Restore();
+            savedRigPos = rig.localPosition;
+            savedRigRot = rig.localRotation;
+            applied = true;
+
             float td = TickDelta;
             float pitch = Pitch;
-
-            // Eye position: the interpolated physics body plus Minecraft's eye height.
-            var smooth = controller.SmoothPosition;
-            var eye = smooth + Vector3.up * Motor.EyeHeight;
-            var rot = Quaternion.Euler(pitch, cam.eulerAngles.y, 0);
-
-            // Minecraft's view transform, in its own (right-handed, looking down -z) view space.
             var B = Matrix4x4.identity;
-            if (hurtTime > 0)
+            // GameRenderer.tiltViewWhenHurt
+            if (Health.HurtTime > 0)
             {
-                float g = (hurtTime - td) / 10f;
-                if (g > 0)
-                {
-                    g = Mathf.Sin(g * g * g * g * Mathf.PI);
-                    B = B * Matrix4x4.Rotate(Quaternion.AngleAxis(-g * 14f, Vector3.forward));
-                }
+                float g = (Health.HurtTime - td) / 10f;
+                if (g > 0) { g = Mathf.Sin(g * g * g * g * Mathf.PI); B = B * Matrix4x4.Rotate(Quaternion.AngleAxis(-g * 14f, Vector3.forward)); }
             }
+            // GameRenderer.bobView
             float walk = hSpeed - prevHSpeed;
             float gg = -(hSpeed + walk * td);
             float h = Mathf.Lerp(prevStride, stride, td);
             B = B * Matrix4x4.Translate(new Vector3(Mathf.Sin(gg * Mathf.PI) * h * 0.5f, -Mathf.Abs(Mathf.Cos(gg * Mathf.PI) * h), 0));
             B = B * Matrix4x4.Rotate(Quaternion.AngleAxis(Mathf.Sin(gg * Mathf.PI) * h * 3f, Vector3.forward));
             B = B * Matrix4x4.Rotate(Quaternion.AngleAxis(Mathf.Abs(Mathf.Cos(gg * Mathf.PI - 0.2f) * h) * 5f, Vector3.right));
-
             var S = Matrix4x4.Scale(new Vector3(1, 1, -1));
             var camDelta = S * B.inverse * S;
 
-            // Perspective (F5): pull back 4 blocks, stopping at walls, or turn around for the front view.
-            var camRot = rot;
+            // eye: interpolated physics position, then F5
+            var eye = camT.position + InterpolatedEyeOffset();
+            var rot = camT.rotation;
             var camPos = eye;
+            var camRot = rot;
             if (Perspective != 0)
             {
-                if (Perspective == 2) camRot = Quaternion.Euler(-pitch, cam.eulerAngles.y + 180f, 0);
+                if (Perspective == 2) camRot = rot * Quaternion.Euler(0, 180, 0) * Quaternion.Euler(-2 * pitch, 0, 0);
+                if (Perspective == 2) camRot = Quaternion.Euler(-pitch, rot.eulerAngles.y + 180f, 0);
                 var back = camRot * Vector3.back;
                 float dist = 4f;
-                if (Physics.SphereCast(eye, 0.1f, back, out var hit, 4f, -675375893 & ~(1 << 8), QueryTriggerInteraction.Ignore))
-                    dist = Mathf.Max(0.1f, hit.distance);
+                // Camera.clipToSpace: eight probes around the eye, nearest hit wins
+                if (Physics.SphereCast(eye, 0.1f, back, out var hit, 4f, SnWorld.SolidMask, QueryTriggerInteraction.Ignore))
+                    dist = Mathf.Max(0.1f, hit.distance - 0.05f);
                 camPos = eye + back * dist;
             }
-            cam.position = camPos + camRot * (Vector3)camDelta.GetColumn(3);
-            cam.rotation = camRot * camDelta.rotation;
+            var worldPos = camPos + camRot * (Vector3)camDelta.GetColumn(3);
+            var worldRot = camRot * camDelta.rotation;
+            // move the rig so the camera (its child at local zero) lands there
+            var camLocalPos = camT.localPosition; var camLocalRot = camT.localRotation;
+            rig.rotation = worldRot * Quaternion.Inverse(camLocalRot);
+            rig.position = worldPos - rig.rotation * camLocalPos;
 
-            // Sprint FOV, on top of whatever FOV Slime Rancher's options set.
-            if (camera != null)
+            if (cam != null)
             {
-                if (baseFov < 0 || Mathf.Abs(camera.fieldOfView - lastSetFov) > 0.01f) baseFov = camera.fieldOfView;
+                if (baseFov < 0 || Mathf.Abs(cam.fieldOfView - lastSetFov) > 0.01f) baseFov = cam.fieldOfView;
                 lastSetFov = baseFov * Mathf.Lerp(prevFovMul, fovMul, td);
-                camera.fieldOfView = lastSetFov;
+                if (Motor.Submerged && !Motor.Swimming) { } // Minecraft narrows the FOV underwater by 6/7 only with the water fog setting
+                cam.fieldOfView = lastSetFov;
             }
 
-            // Body: always there for its shadow; fully visible in third person.
-            if (steve != null)
+            if (Body != null)
             {
-                steve.SetVisible(Perspective != 0);
-                steve.Pose(smooth, cam.eulerAngles.y - (Perspective == 2 ? 180f : 0f), pitch, Motor.Moving, Motor.Sneaking, Mathf.Lerp(prevSwing, swing, td), td);
-                UpdateSteveHeld();
+                Body.SetVisible(Perspective != 0, true);
+                Body.Pose(td, Mathf.Lerp(prevSwing, swing, td), pitch, InterpolatedEyeOffset());
             }
-
-            fpRoot.gameObject.SetActive(Perspective == 0 && !Screens.HideHand);
-            if (Perspective == 0) PoseHand(B, td, pitch);
+            bool fp = Perspective == 0 && !Screens.HideHand;
+            HideFp(!fp);
+            if (fp) PoseHand(B, td, pitch);
+            SnToolInHand(fp);
         }
 
-        private void UpdateSteveHeld()
+        private void HideFp(bool hide)
         {
-            var key = shownKey;
-            if (key == steveHeldKey && (steveHeld != null || shown == null)) return;
-            steveHeldKey = key;
-            if (steveHeld != null) Destroy(steveHeld);
-            steveHeld = null;
-            if (shown == null) return;
-            steveHeld = BuildVisual(shown, steve.HandAnchor, 0, out bool sprite);
-            steveHeld.transform.localScale = Vector3.one * (sprite ? 0.55f : 0.375f) / 0.9375f;
-            steveHeld.transform.localPosition = new Vector3(0, -0.06f, 0.1f);
-            steveHeld.transform.localRotation = Quaternion.Euler(sprite ? 0 : 75, 45, 0);
-            foreach (var r in steveHeld.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            if (fpRoot != null && fpRoot.gameObject.activeSelf == hide) fpRoot.gameObject.SetActive(!hide);
+        }
+
+        private void OnPostRender() => Restore();
+
+        /// <summary>Puts the camera rig back where Subnautica left it (called before logic each frame and before every render).</summary>
+        public void Restore()
+        {
+            if (!applied || rig == null) return;
+            rig.localPosition = savedRigPos;
+            rig.localRotation = savedRigRot;
+            if (cam != null && baseFov > 0) { cam.fieldOfView = baseFov; lastSetFov = baseFov; }
+            applied = false;
         }
 
         // Rotations in Minecraft's matrix stack, about its own axes, in degrees.
@@ -332,7 +316,7 @@ namespace SlimeCraft
         private static Matrix4x4 RZ(float d) => Matrix4x4.Rotate(Quaternion.AngleAxis(d, Vector3.forward));
         private static Matrix4x4 T(float x, float y, float z) => Matrix4x4.Translate(new Vector3(x, y, z));
 
-        private static void Apply(Transform t, Matrix4x4 m)
+        public static void Apply(Transform t, Matrix4x4 m)
         {
             t.localPosition = m.GetColumn(3);
             Vector3 c0 = m.GetColumn(0), c1 = m.GetColumn(1), c2 = m.GetColumn(2);
@@ -343,21 +327,18 @@ namespace SlimeCraft
         private void PoseHand(Matrix4x4 bob, float td, float pitch)
         {
             var S = Matrix4x4.Scale(new Vector3(1, 1, -1));
-            var A = Matrix4x4.Scale(new Vector3(-1, -1, -1));   // Steve's model space -> Minecraft model space
-            var Bk = Matrix4x4.Scale(new Vector3(1, 1, -1));    // block/item model space
-
+            var A = Matrix4x4.Scale(-Vector3.one);            // MPart geometry is -v
             var M = bob;
             float lagP = Mathf.Lerp(prevRenderPitch, renderPitch, td), lagY = Mathf.Lerp(prevRenderYaw, renderYaw, td);
             M = M * RX((pitch - lagP) * 0.1f) * RY((Yaw - lagY) * 0.1f);
-
             float sw = Mathf.Lerp(prevSwing, swing, td);
             float eq = 1f - Mathf.Lerp(prevEquip, equip, td);
             const float i = 1f; // right arm
 
-            if (shown == null)
+            if (shown == null || heldVisual == null)
             {
-                // renderArmHoldingItem
-                arm.gameObject.SetActive(true);
+                // HeldItemRenderer.renderArmHoldingItem (also under a Subnautica tool, which then sits in that hand)
+                armT.gameObject.SetActive(true);
                 heldRoot.gameObject.SetActive(false);
                 float g = Mathf.Sqrt(sw);
                 float hx = -0.3f * Mathf.Sin(g * Mathf.PI), iy = 0.4f * Mathf.Sin(g * Mathf.PI * 2f), jz = -0.4f * Mathf.Sin(sw * Mathf.PI);
@@ -366,22 +347,53 @@ namespace SlimeCraft
                 float k = Mathf.Sin(sw * sw * Mathf.PI), l = Mathf.Sin(g * Mathf.PI);
                 M = M * RY(i * l * 70f) * RZ(i * k * -20f);
                 M = M * T(i * -1f, 3.6f, 3.5f) * RZ(i * 120f) * RX(200f) * RY(i * -135f) * T(i * 5.6f, 0, 0);
-                // PlayerEntityModel.rightArm pivot (-5, 2, 0) in model pixels.
-                M = M * T(-5f / 16f, 2f / 16f, 0);
-                Apply(arm, S * M * A);
+                M = M * T(-5f / 16f, (slim ? 2.5f : 2f) / 16f, 0);
+                Apply(armT, S * M * A);
+                toolMatrix = S * M * A;
                 return;
             }
 
-            arm.gameObject.SetActive(false);
+            armT.gameObject.SetActive(false);
             heldRoot.gameObject.SetActive(true);
-            if (UseTicksLeft > 0)
+            string action = Interaction.Using ? Interaction.UseAction : null;
+            if (action == "eat" || action == "drink")
             {
                 // applyEatOrDrinkTransformation
-                float f = UseTicksLeft - td + 1f;
-                float g = f / 32f;
+                float f = Interaction.UseTicksLeft - td + 1f;
+                float g = f / Interaction.UseMax;
                 if (g < 0.8f) M = M * T(0, Mathf.Abs(Mathf.Cos(f / 4f * Mathf.PI) * 0.1f), 0);
                 float hh = 1f - Mathf.Pow(g, 27f);
                 M = M * T(hh * 0.6f * i, hh * -0.5f, 0) * RY(i * hh * 90f) * RX(hh * 10f) * RZ(i * hh * 30f);
+                M = M * T(i * 0.56f, -0.52f + eq * -0.6f, -0.72f);
+            }
+            else if (action == "bow" || action == "spear" || action == "crossbow")
+            {
+                M = M * T(i * 0.56f, -0.52f + eq * -0.6f, -0.72f);
+                float m = Interaction.UseElapsed + td;
+                if (action == "bow")
+                {
+                    M = M * T(i * -0.2785682f, 0.18344387f, 0.15731531f) * RX(-13.935f) * RY(i * 35.3f) * RZ(i * -9.785f);
+                    float f = m / 20f; f = (f * f + f * 2f) / 3f; if (f > 1f) f = 1f;
+                    if (f > 0.1f) { float j = Mathf.Sin((m - 0.1f) * 1.3f) * (f - 0.1f); M = M * T(0, j * 0.004f, 0); }
+                    M = M * T(0, 0, f * 0.04f) * Matrix4x4.Scale(new Vector3(1, 1, 1 + f * 0.2f)) * RY(-i * 45f);
+                }
+                else if (action == "spear")
+                {
+                    M = M * T(i * -0.5f, 0.7f, 0.1f) * RX(-55f) * RY(i * 35.3f) * RZ(i * -9.785f);
+                    float f = m / 10f; if (f > 1f) f = 1f;
+                    if (f > 0.1f) { float j = Mathf.Sin((m - 0.1f) * 1.3f) * (f - 0.1f); M = M * T(0, j * 0.004f, 0); }
+                    M = M * T(0, 0, f * 0.2f) * Matrix4x4.Scale(new Vector3(1, 1, 1 + f * 0.2f)) * RY(-i * 45f);
+                }
+                else
+                {
+                    M = M * T(i * -0.4785682f, -0.094387f, 0.05731531f) * RX(-11.935f) * RY(i * 65.3f) * RZ(i * -9.785f);
+                    float f = Mathf.Min(1f, m / Interaction.CrossbowPullTime(shown));
+                    if (f > 0.1f) { float j = Mathf.Sin((m - 0.1f) * 1.3f) * (f - 0.1f); M = M * T(0, j * 0.004f, 0); }
+                    M = M * T(0, 0, f * 0.04f) * Matrix4x4.Scale(new Vector3(1, 1, 1 + f * 0.2f)) * RY(-i * 45f);
+                }
+            }
+            else if (action == "block")
+            {
                 M = M * T(i * 0.56f, -0.52f + eq * -0.6f, -0.72f);
             }
             else
@@ -395,53 +407,34 @@ namespace SlimeCraft
                 M = M * RY(i * (45f + s1 * -20f));
                 float g = Mathf.Sin(Mathf.Sqrt(sw) * Mathf.PI);
                 M = M * RZ(i * g * -20f) * RX(g * -80f) * RY(i * -45f);
+                if (shown.Is("crossbow") && Interaction.CrossbowCharged(shown) && sw < 0.001f) M = M * T(i * -0.641864f, 0, 0) * RY(i * 10f);
             }
-
-            // Display transform of the model (firstperson_righthand), then the model's own -0.5 centering
-            // (our meshes are already centred, which the Bk conversion accounts for).
-            if (shown.IsBlock && shown.Block.IsSprite)
-                M = M * T(1.13f / 16f, 3.2f / 16f, 1.13f / 16f) * RX(0) * RY(-90f) * RZ(25f) * Matrix4x4.Scale(Vector3.one * 0.68f);
-            else if (shown.IsBlock)
-                M = M * RY(45f) * Matrix4x4.Scale(Vector3.one * 0.4f);
-            else
-                // A Slime Rancher actor sits like a block, turned so its face looks back at you.
-                M = M * T(0, 0.05f, 0) * RY(200f) * Matrix4x4.Scale(Vector3.one * 0.5f);
-            Apply(heldRoot, S * M * Bk);
+            // our item meshes are already mirrored into Unity space, so the conversion is S on both sides;
+            // the model's display transform is on the visual's own root
+            Apply(heldRoot, S * M * S);
         }
-    }
 
-    /// <summary>Minecraft's item/generated model: the sprite extruded one pixel thick, with side faces only where pixels are opaque.</summary>
-    public static class SpriteMesh
-    {
-        private static readonly System.Collections.Generic.Dictionary<Texture2D, Mesh> cache = new System.Collections.Generic.Dictionary<Texture2D, Mesh>();
+        private Matrix4x4 toolMatrix;
 
-        public static Mesh Extrude(Texture2D tex)
+        /// <summary>
+        /// A held Subnautica tool (knife, scanner, builder...) is moved from the diver's hand into Steve's: its model
+        /// sits in the Minecraft arm's grip and swings with it; the tool's own logic still runs from the camera.
+        /// </summary>
+        /// <summary>
+        /// A held Subnautica tool keeps working (scanner beam, builder, welder sparks...) but its own model is hidden:
+        /// Amai holds it as a Minecraft item, its icon extruded like item/generated.
+        /// </summary>
+        private void SnToolInHand(bool fp)
         {
-            if (cache.TryGetValue(tex, out var m) && m != null) return m;
-            int w = tex.width, h = tex.height;
-            var px = tex.GetPixels32();
-            bool Op(int x, int y) => x >= 0 && y >= 0 && x < w && y < h && px[y * w + x].a > 0;
-            var mb = new Blocks.MeshBuilder(1);
-            float z0 = -0.5f / 16f, z1 = 0.5f / 16f;
-            Vector3 P(float x, float y, float z) => new Vector3(x / w - 0.5f, y / h - 0.5f, z);
-            Vector2 U(float x, float y) => new Vector2(x / w, y / h);
-            mb.Quad(0, P(0, 0, z0), P(0, h, z0), P(w, h, z0), P(w, 0, z0), Vector3.back, U(0, 0), U(0, 1), U(1, 1), U(1, 0));
-            mb.Quad(0, P(w, 0, z1), P(w, h, z1), P(0, h, z1), P(0, 0, z1), Vector3.forward, U(1, 0), U(1, 1), U(0, 1), U(0, 0));
-            for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
-                {
-                    if (!Op(x, y)) continue;
-                    var c = U(x + 0.5f, y + 0.5f);
-                    if (!Op(x - 1, y)) mb.Quad(0, P(x, y, z1), P(x, y + 1, z1), P(x, y + 1, z0), P(x, y, z0), Vector3.left, c, c, c, c);
-                    if (!Op(x + 1, y)) mb.Quad(0, P(x + 1, y, z0), P(x + 1, y + 1, z0), P(x + 1, y + 1, z1), P(x + 1, y, z1), Vector3.right, c, c, c, c);
-                    if (!Op(x, y - 1)) mb.Quad(0, P(x, y, z0), P(x + 1, y, z0), P(x + 1, y, z1), P(x, y, z1), Vector3.down, c, c, c, c);
-                    if (!Op(x, y + 1)) mb.Quad(0, P(x, y + 1, z1), P(x + 1, y + 1, z1), P(x + 1, y + 1, z0), P(x, y + 1, z0), Vector3.up, c, c, c, c);
-                }
-            m = mb.Build();
-            m.name = "sprite " + tex.name;
-            Object.DontDestroyOnLoad(m);
-            cache[tex] = m;
-            return m;
+            var tool = SnBridge.HeldTool;
+            if (tool == null) return;
+            foreach (var r in tool.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r is ParticleSystemRenderer || r is LineRenderer || r is TrailRenderer) continue;
+                if (!r.forceRenderingOff) r.forceRenderingOff = true;
+            }
         }
+
+        public void ForceRebuild() { shownKey = "~"; }
     }
 }

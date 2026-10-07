@@ -6,11 +6,10 @@ using UnityEngine;
 namespace SlimeCraft
 {
     /// <summary>
-    /// Entry point. Everything else hangs off one hidden root object that survives scene loads,
-    /// because Slime Rancher swaps scenes between the main menu and the world and we must keep
-    /// our Minecraft state (assets, sounds) across that.
+    /// Entry point. Everything hangs off one hidden root object that survives scene loads, because Subnautica
+    /// swaps between the main menu and the world scene and our Minecraft state (assets, sounds) must survive that.
     /// </summary>
-    [BepInPlugin("com.amai.slimecraft", "SlimeCraft", "0.1.0")]
+    [BepInPlugin("com.amai.subnauticraft", "SubnautiCraft", "0.1.0")]
     public class Plugin : BaseUnityPlugin
     {
         public static ManualLogSource Log;
@@ -22,14 +21,21 @@ namespace SlimeCraft
             Instance = this;
             Log = Logger;
             Dir = System.IO.Path.GetDirectoryName(Info.Location);
-            new Harmony("com.amai.slimecraft").PatchAll();
+            // one class at a time, so a patch that no longer fits the game cannot take the rest down with it
+            var harmony = new Harmony("com.amai.subnauticraft");
+            foreach (var t in typeof(Plugin).Assembly.GetTypes())
+            {
+                if (t.GetCustomAttributes(typeof(HarmonyPatch), true).Length == 0) continue;
+                try { harmony.CreateClassProcessor(t).Patch(); }
+                catch (System.Exception e) { Logger.LogError("patch " + t.Name + " failed: " + e.Message); }
+            }
 
-            var root = new GameObject("SlimeCraft");
+            var root = new GameObject("SubnautiCraft");
             root.hideFlags = HideFlags.HideAndDontSave;
             DontDestroyOnLoad(root);
             root.AddComponent<DebugChannel>();
             root.AddComponent<Game>();
-            Log.LogInfo("SlimeCraft loaded from " + Dir);
+            Log.LogInfo("SubnautiCraft loaded from " + Dir);
         }
     }
 }
