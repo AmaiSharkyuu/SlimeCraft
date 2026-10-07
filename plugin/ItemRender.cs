@@ -379,6 +379,19 @@ namespace SlimeCraft
             return ic;
         }
 
+        private static readonly Dictionary<Material, Material> iconMats = new Dictionary<Material, Material>();
+
+        private static Material IconMaterial(Material m)
+        {
+            if (m == null) return null;
+            if (iconMats.TryGetValue(m, out var c) && c != null) return c;
+            bool see = m.renderQueue >= 2450;
+            c = new Material(Shader.Find(see ? "Legacy Shaders/Transparent/Diffuse" : "Legacy Shaders/Diffuse")) { name = m.name + " (icon)", mainTexture = m.mainTexture, color = Color.white };
+            Object.DontDestroyOnLoad(c);
+            iconMats[m] = c;
+            return c;
+        }
+
         private static Texture2D RenderIcon(ItemStack s, string modelName)
         {
             const int size = 64;
@@ -410,14 +423,28 @@ namespace SlimeCraft
             var holder = new GameObject("icon holder") { layer = 29 };
             holder.transform.SetParent(iconStage.transform, false);
             var vis = Build(s, holder.transform, 29, "gui");
-            foreach (var r in vis.GetComponentsInChildren<Renderer>()) r.gameObject.layer = 29;
+            foreach (var r in vis.GetComponentsInChildren<Renderer>())
+            {
+                r.gameObject.layer = 29;
+                // Slime Rancher's Paintlight shaders take their light from the world's sun and fog, not from the icon
+                // stage's lamp: icons are drawn with plain diffuse copies instead, lit like Minecraft's GUI.
+                if (!s.IsSr)
+                {
+                    var ms = r.sharedMaterials;
+                    for (int i = 0; i < ms.Length; i++) ms[i] = IconMaterial(ms[i]);
+                    r.sharedMaterials = ms;
+                }
+            }
             var rt = RenderTexture.GetTemporary(size, size, 16, RenderTextureFormat.ARGB32);
             iconCam.targetTexture = rt;
             var oldAmbient = RenderSettings.ambientLight;
             var oldMode = RenderSettings.ambientMode;
+            bool oldFog = RenderSettings.fog;
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.55f, 0.55f, 0.55f);
+            RenderSettings.fog = false;
             iconCam.Render();
+            RenderSettings.fog = oldFog;
             RenderSettings.ambientLight = oldAmbient;
             RenderSettings.ambientMode = oldMode;
             var prev = RenderTexture.active;

@@ -205,6 +205,7 @@ namespace SlimeCraft
 
         protected override bool ClickExtra(float mx, float my, int button)
         {
+            if (button == 0 && SlimeStorageButton.Click(Left, Top, mx, my)) return true;
             for (int i = 0; i < tabs.Count; i++)
             {
                 var t = tabs[i];
@@ -232,6 +233,7 @@ namespace SlimeCraft
             }
             DrawTab(tab, tabsTex, true);
             McFont.Draw(t.Name, Left + 8, Top + 6, new Color(0.25f, 0.25f, 0.25f), false);
+            SlimeStorageButton.Draw(Left, Top, mx, my);
             if (t.Key == "search")
             {
                 McFont.Draw(search + ((int)(Time.unscaledTime * 3) % 2 == 0 ? "_" : ""), Left + 82, Top + 6, Color.white);

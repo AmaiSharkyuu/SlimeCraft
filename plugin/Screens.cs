@@ -605,7 +605,6 @@ namespace SlimeCraft
         private void Take(ItemStack taken)
         {
             Crafting.Consume(grid);
-            foreach (var s in grid) if (s != null && s.IsSr && !SrBridge.IsVirtual(s.Actor)) { }
             Update2();
         }
 
@@ -616,7 +615,10 @@ namespace SlimeCraft
             base.DrawBackground(mx, my);
             McFont.Draw(McData.T("container.crafting"), Left + 97, Top + 8, new Color(0.25f, 0.25f, 0.25f), false);
             InventoryPreview.Draw(Left + 26, Top + 8, 49, 70, mx, my);
+            SlimeStorageButton.Draw(Left, Top, mx, my);
         }
+
+        protected override bool ClickExtra(float mx, float my, int button) => button == 0 && SlimeStorageButton.Click(Left, Top, mx, my);
     }
 
     /// <summary>Amai turning to look at the mouse in the inventory, drawn by rendering the body to a texture.</summary>
@@ -777,7 +779,7 @@ namespace SlimeCraft
         }
 
         /// <summary>Subnautica tools and equipment keep their charge and state only in Subnautica's own storage, so they stay out of Minecraft chests.</summary>
-        public static bool Storable(ItemStack v) => !(v.IsSr && !SrBridge.IsVirtual(v.Actor));
+        public static bool Storable(ItemStack v) => true;
 
         public override void OnOpen()
         {
