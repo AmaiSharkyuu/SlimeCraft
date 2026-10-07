@@ -37,7 +37,7 @@ namespace SlimeCraft
         /// <summary>Moves by Vel with sliding collisions against blocks and Subnautica geometry.</summary>
         protected bool MoveCollide()
         {
-            InWater = SnWorld.IsWater(transform.position) || BlockWorld.Get(BlockWorld.CellAt(transform.position))?.Block.Id == "water";
+            InWater = SrWorld.IsWater(transform.position) || BlockWorld.Get(BlockWorld.CellAt(transform.position))?.Block.Id == "water";
             var from = transform.position;
             var d = Vel;
             float len = d.magnitude;
@@ -45,7 +45,7 @@ namespace SlimeCraft
             bool hitAny = false;
             for (int i = 0; i < 3 && len > 1e-5f; i++)
             {
-                if (Physics.SphereCast(from, Radius, d / len, out var hit, len, SnWorld.SolidMask, QueryTriggerInteraction.Ignore) && !IgnoreHit(hit))
+                if (Physics.SphereCast(from, Radius, d / len, out var hit, len, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) && !IgnoreHit(hit))
                 {
                     hitAny = true;
                     from += d / len * Mathf.Max(0, hit.distance - 0.01f);
@@ -67,7 +67,7 @@ namespace SlimeCraft
         protected virtual bool IgnoreHit(RaycastHit h) => h.collider.transform.IsChildOf(transform) || Player.main != null && h.collider.transform.IsChildOf(Player.main.transform);
         protected virtual void OnHit(RaycastHit h) { }
 
-        protected bool Grounded() => Physics.SphereCast(transform.position + Vector3.up * 0.05f, Radius * 0.9f, Vector3.down, out var h, 0.08f, SnWorld.SolidMask, QueryTriggerInteraction.Ignore) && !IgnoreHit(h);
+        protected bool Grounded() => Physics.SphereCast(transform.position + Vector3.up * 0.05f, Radius * 0.9f, Vector3.down, out var h, 0.08f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) && !IgnoreHit(h);
     }
 
     /// <summary>
@@ -155,7 +155,7 @@ namespace SlimeCraft
             if (Mathf.Abs(d.x) < 1.3f && Mathf.Abs(d.z) < 1.3f && transform.position.y > feet.y - 0.5f && transform.position.y < feet.y + 2.3f)
             {
                 int took;
-                if (Stack.IsSn && !SnBridge.IsVirtual(Stack.Tech)) { SnBridge.GiveReal(Stack.Tech, Stack.Count); took = Stack.Count; }
+                if (Stack.IsSr && !SrBridge.IsVirtual(Stack.Actor)) { SrBridge.GiveReal(Stack.Actor, Stack.Count); took = Stack.Count; }
                 else took = Inventory.Add(Stack);
                 if (took > 0)
                 {
@@ -332,7 +332,7 @@ namespace SlimeCraft
                 if (!BlockWorld.Has(cell))
                 {
                     var s = State;
-                    if (s.Block.Class == "ConcretePowderBlock" && SnWorld.IsWater(transform.position)) s = McData.Block(s.Block.Id.Replace("_powder", "")).Default;
+                    if (s.Block.Class == "ConcretePowderBlock" && SrWorld.IsWater(transform.position)) s = McData.Block(s.Block.Id.Replace("_powder", "")).Default;
                     BlockWorld.Set(cell, s);
                     Sounds.Play(Sounds.BlockEvent(s.Block.Sound, "place"), BlockWorld.Center(cell), 1f, 0.8f);
                 }

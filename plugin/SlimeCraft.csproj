@@ -17,6 +17,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- Slime Rancher has no JSON library of its own; this one ships next to SlimeCraft.dll. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
   <ItemGroup>
@@ -50,7 +52,7 @@
     <ItemGroup>
       <McAssets Include="assets\**\*" />
     </ItemGroup>
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginOut)" />
+    <Copy SourceFiles="$(TargetPath);$(TargetDir)Newtonsoft.Json.dll" DestinationFolder="$(PluginOut)" />
     <Copy SourceFiles="@(McAssets)" DestinationFolder="$(PluginOut)\assets\%(RecursiveDir)" SkipUnchangedFiles="true" />
   </Target>
 

@@ -190,7 +190,7 @@ namespace SlimeCraft
             if (itemIds != null) return itemIds;
             itemIds = new List<string>();
             foreach (var d in McData.ItemList) itemIds.Add("minecraft:" + d.Id);
-            foreach (TechType t in global::System.Enum.GetValues(typeof(TechType))) if (t != TechType.None) itemIds.Add("subnautica:" + t.ToString().ToLowerInvariant());
+            foreach (Identifiable.Id t in global::System.Enum.GetValues(typeof(Identifiable.Id))) if (t != Identifiable.Id.NONE) itemIds.Add("subnautica:" + t.ToString().ToLowerInvariant());
             itemIds = itemIds.Distinct().ToList();
             return itemIds;
         }
@@ -206,7 +206,7 @@ namespace SlimeCraft
         {
             if (entityIds != null) return entityIds;
             entityIds = Mobs.Aquatic.Select(a => "minecraft:" + a).ToList();
-            foreach (var n in SnCreatures.Names) entityIds.Add("subnautica:" + n);
+            foreach (var n in SrCreatures.Names) entityIds.Add("subnautica:" + n);
             return entityIds;
         }
 
@@ -272,12 +272,12 @@ namespace SlimeCraft
             if (id.StartsWith("subnautica:") || id.StartsWith("sn:"))
             {
                 var name = id.Substring(id.IndexOf(':') + 1);
-                if (SnCreatures.TryGet(name, out var tt)) return new ItemStack(tt, count);
+                if (SrCreatures.TryGet(name, out var tt)) return new ItemStack(tt, count);
                 return null;
             }
             var d = McData.Item(Strip(id));
             if (d != null) return new ItemStack(d, count);
-            if (SnCreatures.TryGet(id, out var t2)) return new ItemStack(t2, count);
+            if (SrCreatures.TryGet(id, out var t2)) return new ItemStack(t2, count);
             return null;
         }
 
@@ -298,7 +298,7 @@ namespace SlimeCraft
                     int n = a.Length > 3 ? int.Parse(a[3]) : 1;
                     var s = ParseItem(a[2], n);
                     if (s == null) { Chat.Add("§c" + McData.Tf("argument.item.id.invalid", a[2])); return; }
-                    if (s.IsSn && !SnBridge.IsVirtual(s.Tech)) SnBridge.GiveReal(s.Tech, n);
+                    if (s.IsSr && !SrBridge.IsVirtual(s.Actor)) SrBridge.GiveReal(s.Actor, n);
                     else
                     {
                         int left = n;
@@ -391,7 +391,7 @@ namespace SlimeCraft
                 {
                     int n = 0;
                     var filter = a.Length >= 3 ? ParseItem(a[2], 1) : null;
-                    for (int i = 0; i < 36; i++) if (Inventory.Main[i] != null && (filter == null || Inventory.Main[i].Id == filter.Id)) { n += Inventory.Main[i].Count; if (Inventory.Main[i].IsSn) SnBridge.Consume(Inventory.Main[i].Tech, Inventory.Main[i].Count); Inventory.Main[i] = null; }
+                    for (int i = 0; i < 36; i++) if (Inventory.Main[i] != null && (filter == null || Inventory.Main[i].Id == filter.Id)) { n += Inventory.Main[i].Count; if (Inventory.Main[i].IsSr) SrBridge.Consume(Inventory.Main[i].Actor, Inventory.Main[i].Count); Inventory.Main[i] = null; }
                     if (filter == null) { for (int i = 0; i < 4; i++) { if (Inventory.Armor[i] != null) n++; Inventory.Armor[i] = null; } if (Inventory.Offhand != null) n += Inventory.Offhand.Count; Inventory.Offhand = null; }
                     Chat.Add(McData.Tf("commands.clear.success.single", n, Chat.PlayerName));
                     return;

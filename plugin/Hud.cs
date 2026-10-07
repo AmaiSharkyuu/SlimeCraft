@@ -302,7 +302,7 @@ namespace SlimeCraft
             var facing = BlockRules.HorizontalFacing(BlockRules.McLook(cam.forward));
             var lines = new List<string>
             {
-                "Minecraft 1.20.1 (SubnautiCraft/" + (GameMode.Creative ? "creative" : "survival") + ")",
+                "Minecraft 1.20.1 (SlimeCraft/" + (GameMode.Creative ? "creative" : "survival") + ")",
                 Mathf.RoundToInt(fps) + " fps",
                 "",
                 string.Format(System.Globalization.CultureInfo.InvariantCulture, "XYZ: {0:F3} / {1:F5} / {2:F3}", feet.x, feet.y, -feet.z),
@@ -315,7 +315,7 @@ namespace SlimeCraft
             var t = Interaction.Current;
             if (t.IsBlock) { var s = BlockWorld.Get(t.Cell); lines.Add(""); lines.Add("Targeted Block: " + t.Cell.x + ", " + t.Cell.y + ", " + (-t.Cell.z)); lines.Add("minecraft:" + s?.Block.Id); if (s != null) foreach (var kv in s.Props) lines.Add(kv.Key + ": " + kv.Value); }
             else if (t.Mob != null) { lines.Add(""); lines.Add("Targeted Entity: minecraft:" + t.Mob.Type); }
-            else if (t.SnObject != null) { lines.Add(""); lines.Add("Subnautica: " + CraftData.GetTechType(t.SnObject) + " (" + SnWorld.SurfaceAt(t.Hit) + ")"); }
+            else if (t.SnObject != null) { lines.Add(""); lines.Add("Subnautica: " + CraftData.GetTechType(t.SnObject) + " (" + SrWorld.SurfaceAt(t.Hit) + ")"); }
             int y = 2;
             foreach (var l in lines)
             {

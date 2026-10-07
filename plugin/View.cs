@@ -9,7 +9,8 @@ namespace SlimeCraft
     /// transforms. A 20 Hz client tick holds the state and every frame interpolates, like Minecraft.
     ///
     /// The camera offsets are applied in the main camera's OnPreCull and taken back in OnPostRender, so game logic
-    /// (aiming, raycasts, Subnautica's tools) always sees the plain, unbobbed eye.
+    /// (aiming, raycasts, Slime Rancher's own prompts) always sees the plain, unbobbed eye. The hand is drawn by
+    /// Slime Rancher's weapon camera (a child of the main camera), so it never clips into walls.
     /// </summary>
     public class View : MonoBehaviour
     {
@@ -31,35 +32,35 @@ namespace SlimeCraft
         public bool HideGui;      // F1
 
         // ---- objects
-        private Transform camT, rig;
+        private Transform camT;
         private Camera cam;
         private Transform fpRoot, armT, heldRoot, heldPivot;
         private GameObject heldVisual;
         private MPart arm;
         public PlayerBody Body;
         private float baseFov = -1, lastSetFov = -1;
-        private Vector3 savedRigPos; private Quaternion savedRigRot; private bool applied;
-        public const int HandLayer = 8; // Subnautica's view model layer
+        private Vector3 savedPos; private Quaternion savedRot; private bool applied;
+        public const int HandLayer = 31; // Slime Rancher's "Weapon" layer, drawn by its weapon camera
         private bool slim = true;
 
-        public static void Create(Player p)
+        public static void Create(GameObject player)
         {
-            var camGo = MainCamera.camera.gameObject;
+            var camGo = player.GetComponentInChildren<SRFPCamera>().gameObject;
             var v = camGo.GetComponent<View>() ?? camGo.AddComponent<View>();
-            v.Setup(p);
+            v.Setup();
         }
 
-        private void Setup(Player p)
+        private void Setup()
         {
             I = this;
             cam = GetComponent<Camera>();
             camT = transform;
-            rig = camT.parent; // PlayerCameras: the camera's parent, moved for bobbing / F5
             if (fpRoot != null) Destroy(fpRoot.gameObject);
-            fpRoot = new GameObject("SubnautiCraft FP").transform;
+            fpRoot = new GameObject("SlimeCraft FP").transform;
             fpRoot.gameObject.layer = HandLayer;
             fpRoot.SetParent(camT, false);
-            var skin = McTex.Get("../amai");
+            var skin = PlayerSkin.Texture;
+            slim = PlayerSkin.Slim;
             arm = Models.RightArm(slim);
             var armMat = BlockWorld.MakeMat(1, skin);
             var armHolder = new GameObject("arm holder") { layer = HandLayer };
@@ -184,7 +185,7 @@ namespace SlimeCraft
             return 6;
         }
 
-        private static string KeyOf(ItemStack s) => s == null ? "" : s.Id + "|" + s.Damage + "|" + (s.Enchanted ? "e" : "") + s.Potion + s.Color + (s.IsSn ? (SnModels.Ready(s.Tech) ? "3d" : SnModels.Failed(s.Tech) ? "icon" : "?") : "");
+        private static string KeyOf(ItemStack s) => s == null ? "" : s.Id + "|" + s.Damage + "|" + (s.Enchanted ? "e" : "") + s.Potion + s.Color + (s.IsSr ? (SrModels.Ready(s.Actor) ? "3d" : SrModels.Failed(s.Actor) ? "icon" : "?") : "");
 
         private string lastUseModel;
 
@@ -223,13 +224,25 @@ namespace SlimeCraft
             return Vector3.up * y;
         }
 
+        /// <summary>
+        /// After Slime Rancher's camera placed itself: put it at Minecraft's plain eye (the feet plus the eased eye
+        /// height), so everything that aims from the camera aims from where Minecraft would.
+        /// </summary>
+        public void PlaceEye()
+        {
+            if (!Game.Active || camT == null || Motor.SuspendedByGame) return;
+            camT.position = SrWorld.Feet + Vector3.up * Mathf.Lerp(prevCamY, camY, TickDelta);
+            var e = camT.eulerAngles;
+            camT.rotation = Quaternion.Euler(e.x, e.y, 0f); // Slime Rancher's camera roll springs are not Minecraft's
+        }
+
         private void OnPreCull()
         {
-            if (!Game.Active || rig == null || Player.main == null) return;
+            if (!Game.Active || camT == null || SrWorld.Player == null) return;
             if (Motor.SuspendedByGame) { HideFp(true); if (Body != null) Body.SetVisible(false, false); return; }
             Restore();
-            savedRigPos = rig.localPosition;
-            savedRigRot = rig.localRotation;
+            savedPos = camT.localPosition;
+            savedRot = camT.localRotation;
             applied = true;
 
             float td = TickDelta;
@@ -251,8 +264,8 @@ namespace SlimeCraft
             var S = Matrix4x4.Scale(new Vector3(1, 1, -1));
             var camDelta = S * B.inverse * S;
 
-            // eye: interpolated physics position, then F5
-            var eye = camT.position + InterpolatedEyeOffset();
+            // eye: the plain eye placed after Slime Rancher's camera update, then F5
+            var eye = camT.position;
             var rot = camT.rotation;
             var camPos = eye;
             var camRot = rot;
@@ -263,16 +276,13 @@ namespace SlimeCraft
                 var back = camRot * Vector3.back;
                 float dist = 4f;
                 // Camera.clipToSpace: eight probes around the eye, nearest hit wins
-                if (Physics.SphereCast(eye, 0.1f, back, out var hit, 4f, SnWorld.SolidMask, QueryTriggerInteraction.Ignore))
+                if (Physics.SphereCast(eye, 0.1f, back, out var hit, 4f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore))
                     dist = Mathf.Max(0.1f, hit.distance - 0.05f);
                 camPos = eye + back * dist;
             }
             var worldPos = camPos + camRot * (Vector3)camDelta.GetColumn(3);
             var worldRot = camRot * camDelta.rotation;
-            // move the rig so the camera (its child at local zero) lands there
-            var camLocalPos = camT.localPosition; var camLocalRot = camT.localRotation;
-            rig.rotation = worldRot * Quaternion.Inverse(camLocalRot);
-            rig.position = worldPos - rig.rotation * camLocalPos;
+            camT.SetPositionAndRotation(worldPos, worldRot);
 
             if (cam != null)
             {
@@ -285,12 +295,11 @@ namespace SlimeCraft
             if (Body != null)
             {
                 Body.SetVisible(Perspective != 0, true);
-                Body.Pose(td, Mathf.Lerp(prevSwing, swing, td), pitch, InterpolatedEyeOffset());
+                Body.Pose(td, Mathf.Lerp(prevSwing, swing, td), pitch, Vector3.zero);
             }
             bool fp = Perspective == 0 && !Screens.HideHand;
             HideFp(!fp);
             if (fp) PoseHand(B, td, pitch);
-            SnToolInHand(fp);
         }
 
         private void HideFp(bool hide)
@@ -300,12 +309,12 @@ namespace SlimeCraft
 
         private void OnPostRender() => Restore();
 
-        /// <summary>Puts the camera rig back where Subnautica left it (called before logic each frame and before every render).</summary>
+        /// <summary>Puts the camera back at the plain eye (called before logic each frame and after every render).</summary>
         public void Restore()
         {
-            if (!applied || rig == null) return;
-            rig.localPosition = savedRigPos;
-            rig.localRotation = savedRigRot;
+            if (!applied || camT == null) return;
+            camT.localPosition = savedPos;
+            camT.localRotation = savedRot;
             if (cam != null && baseFov > 0) { cam.fieldOfView = baseFov; lastSetFov = baseFov; }
             applied = false;
         }
@@ -337,7 +346,7 @@ namespace SlimeCraft
 
             if (shown == null || heldVisual == null)
             {
-                // HeldItemRenderer.renderArmHoldingItem (also under a Subnautica tool, which then sits in that hand)
+                // HeldItemRenderer.renderArmHoldingItem
                 armT.gameObject.SetActive(true);
                 heldRoot.gameObject.SetActive(false);
                 float g = Mathf.Sqrt(sw);
@@ -416,25 +425,17 @@ namespace SlimeCraft
 
         private Matrix4x4 toolMatrix;
 
-        /// <summary>
-        /// A held Subnautica tool (knife, scanner, builder...) is moved from the diver's hand into Steve's: its model
-        /// sits in the Minecraft arm's grip and swings with it; the tool's own logic still runs from the camera.
-        /// </summary>
-        /// <summary>
-        /// A held Subnautica tool keeps working (scanner beam, builder, welder sparks...) but its own model is hidden:
-        /// Amai holds it as a Minecraft item, its icon extruded like item/generated.
-        /// </summary>
-        private void SnToolInHand(bool fp)
-        {
-            var tool = SnBridge.HeldTool;
-            if (tool == null) return;
-            foreach (var r in tool.GetComponentsInChildren<Renderer>(true))
-            {
-                if (r is ParticleSystemRenderer || r is LineRenderer || r is TrailRenderer) continue;
-                if (!r.forceRenderingOff) r.forceRenderingOff = true;
-            }
-        }
-
         public void ForceRebuild() { shownKey = "~"; }
+    }
+
+    [HarmonyLib.HarmonyPatch]
+    internal static class ViewPatches
+    {
+        // Slime Rancher's camera follows its own controller; Minecraft's eye is placed right after it, every frame.
+        [HarmonyLib.HarmonyPatch(typeof(vp_FPCamera), "LateUpdate"), HarmonyLib.HarmonyPostfix]
+        private static void AfterCamera(vp_FPCamera __instance)
+        {
+            if (Game.Active && View.I != null && __instance is SRFPCamera) View.I.PlaceEye();
+        }
     }
 }

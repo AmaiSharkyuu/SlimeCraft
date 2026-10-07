@@ -102,12 +102,12 @@ namespace SlimeCraft
                 if (h.collider.transform.IsChildOf(Player.main.transform)) continue;
                 if (h.collider.GetComponentInParent<Mob>() != null) continue;
                 if (View.I != null && View.I.Body != null && h.collider.transform.IsChildOf(View.I.Body.transform)) continue;
-                var tool = SnBridge.HeldTool;
+                var tool = SrBridge.HeldTool;
                 if (tool != null && h.collider.transform.IsChildOf(tool.transform)) continue;
                 t = new Target { Any = true, Hit = h, Point = h.point, Normal = h.normal, Distance = h.distance, SnObject = h.collider.gameObject };
                 var lm = h.collider.GetComponentInParent<LiveMixin>();
                 if (lm != null && lm.IsAlive() && lm.GetComponent<Creature>() != null) t.Live = lm;
-                t.Terrain = SnWorld.IsTerrain(h.collider);
+                t.Terrain = SrWorld.IsTerrain(h.collider);
                 break;
             }
             return t;
@@ -174,7 +174,7 @@ namespace SlimeCraft
             leftWas = left; rightWas = right;
 
             var held = Inventory.Held;
-            bool snTool = held != null && held.IsSn && SnItems.IsTool(held.Tech) && SnBridge.HeldTool != null;
+            bool snTool = held != null && held.IsSr && SrItems.IsTool(held.Actor) && SrBridge.HeldTool != null;
             var hand = p.guiHand;
             var snTarget = hand != null ? hand.GetActiveTarget() : null;
 
@@ -193,7 +193,7 @@ namespace SlimeCraft
             // Subnautica tool in hand: its own controls; right click still uses what is targeted
             if (snTool)
             {
-                if (rightDown && snTarget != null && !SnBridge.HeldTool.DoesOverrideHand())
+                if (rightDown && snTarget != null && !SrBridge.HeldTool.DoesOverrideHand())
                 {
                     GUIHand.Send(snTarget, HandTargetEventType.Click, hand);
                     SuppressSnRight = true;
@@ -388,7 +388,7 @@ namespace SlimeCraft
             {
                 mining = true; miningTerrain = true; progress = 0; hitSoundTicks = 0;
                 terrainPoint = t.Point; terrainNormal = t.Normal; miningOutcrop = outcrop;
-                terrainBlock = outcrop != null ? McData.Block("stone") : SnWorld.MinedBlock(t.Hit, out terrainOre);
+                terrainBlock = outcrop != null ? McData.Block("stone") : SrWorld.MinedBlock(t.Hit, out terrainOre);
             }
             if (terrainBlock == null) return;
             View.I?.Swing();
@@ -533,7 +533,7 @@ namespace SlimeCraft
             if (held == null) return;
 
             // 4. the item itself
-            if (held.IsSn) { UseSnItem(held); return; }
+            if (held.IsSr) { UseSnItem(held); return; }
             var id = held.Item.Id;
 
             // armour: right click puts it on
@@ -588,7 +588,7 @@ namespace SlimeCraft
                     if (fresh) Fishing.Toggle(held);
                     return;
                 case "bucket":
-                    if (fresh && (Motor.InWater || t.Any && SnWorld.IsWater(t.Point + t.Normal * 0.1f) || t.IsBlock && BlockWorld.Get(t.Cell)?.Block.Id == "water"))
+                    if (fresh && (Motor.InWater || t.Any && SrWorld.IsWater(t.Point + t.Normal * 0.1f) || t.IsBlock && BlockWorld.Get(t.Cell)?.Block.Id == "water"))
                     {
                         if (t.IsBlock && BlockWorld.Get(t.Cell)?.Block.Id == "water") BlockWorld.Remove(t.Cell);
                         Sounds.Play("item.bucket.fill", Player.main.transform.position);
@@ -619,7 +619,7 @@ namespace SlimeCraft
                         else
                         {
                             var up = t.Cell + BlockWorld.Offset(t.Face);
-                            if (!BlockWorld.Has(up) && !SnWorld.IsWater(BlockWorld.Center(up))) BlockWorld.Set(up, McData.Block("fire").Default);
+                            if (!BlockWorld.Has(up) && !SrWorld.IsWater(BlockWorld.Center(up))) BlockWorld.Set(up, McData.Block("fire").Default);
                         }
                         Sounds.Play(id == "fire_charge" ? "item.firecharge.use" : "item.flintandsteel.use", BlockWorld.Center(t.Cell));
                         if (id == "flint_and_steel") Inventory.DamageHeld(1); else Inventory.ShrinkHeld();
@@ -627,7 +627,7 @@ namespace SlimeCraft
                     }
                     return;
                 case "glass_bottle":
-                    if (fresh && (Motor.InWater || t.Any && SnWorld.IsWater(t.Point)))
+                    if (fresh && (Motor.InWater || t.Any && SrWorld.IsWater(t.Point)))
                     {
                         Sounds.Play("item.bottle.fill", Player.main.transform.position);
                         Inventory.ShrinkHeld();
@@ -755,8 +755,8 @@ namespace SlimeCraft
             var s = BlockRules.PlacementState(block, ctx);
             if (s == null) return;
             // concrete powder turns to concrete in water, like ConcretePowderBlock
-            if (block.Class == "ConcretePowderBlock" && SnWorld.IsWater(BlockWorld.Center(cell))) s = McData.Block(block.Id.Replace("_powder", "")).Default;
-            if (s.Block.HasProp("waterlogged") && SnWorld.IsWater(BlockWorld.Center(cell))) s = s.With("waterlogged", "true");
+            if (block.Class == "ConcretePowderBlock" && SrWorld.IsWater(BlockWorld.Center(cell))) s = McData.Block(block.Id.Replace("_powder", "")).Default;
+            if (s.Block.HasProp("waterlogged") && SrWorld.IsWater(BlockWorld.Center(cell))) s = s.With("waterlogged", "true");
             if (!BlockRules.Supported(s, cell) && s.Block.Class != "DoorBlock" && s.Block.Class != "BedBlock" && !s.Block.Class.StartsWith("Tall")) return;
             // never inside the player or a creature (BlockItem.canPlace with the entity collision check)
             foreach (var b in s.Collision)
@@ -780,7 +780,7 @@ namespace SlimeCraft
         private static void UseSnItem(ItemStack held)
         {
             if (!Hunger.CanEat(true)) return;
-            var info = SnFood.Get(held.Tech);
+            var info = SrFood.Get(held.Actor);
             if (info == null) return;
             if (info.Food <= 0 && info.Water <= 0) return;
             StartUse(info.Food <= 0 ? "drink" : "eat", 32);
@@ -856,9 +856,9 @@ namespace SlimeCraft
         /// <summary>Item.finishUsing: food, drinks, potions, milk.</summary>
         private static void FinishUse(ItemStack held)
         {
-            if (held.IsSn)
+            if (held.IsSr)
             {
-                var info = SnFood.Get(held.Tech);
+                var info = SrFood.Get(held.Actor);
                 if (info != null)
                 {
                     var sv = Player.main.GetComponent<Survival>();
@@ -868,7 +868,7 @@ namespace SlimeCraft
                     if (info.Health > 0) Health.Heal(info.Health / Health.Scale);
                     Sounds.Play("entity.player.burp", Player.main.transform.position, 0.5f, Random.value * 0.1f + 0.9f);
                     if (!GameMode.Creative) Inventory.ShrinkHeld();
-                    if (held.Tech == TechType.FilteredWater || held.Tech == TechType.BigFilteredWater || held.Tech == TechType.DisinfectedWater) { }
+                    if (held.Actor == Identifiable.Id.FilteredWater || held.Actor == Identifiable.Id.BigFilteredWater || held.Actor == Identifiable.Id.DisinfectedWater) { }
                 }
                 return;
             }
@@ -926,10 +926,10 @@ namespace SlimeCraft
         {
             var cam = MainCamera.camera.transform;
             var at = cam.position - Vector3.up * 0.3f;
-            if (s.IsSn)
+            if (s.IsSr)
             {
-                if (!SnBridge.IsVirtual(s.Tech)) { SnBridge.TakeReal(s.Tech, s.Count, false); return; }
-                UWE.CoroutineHost.StartCoroutine(SpawnSn(s.Tech, s.Count, at + cam.forward * 0.5f, cam.forward * 3f));
+                if (!SrBridge.IsVirtual(s.Actor)) { SrBridge.TakeReal(s.Actor, s.Count, false); return; }
+                UWE.CoroutineHost.StartCoroutine(SpawnSn(s.Actor, s.Count, at + cam.forward * 0.5f, cam.forward * 3f));
                 return;
             }
             var look = cam.forward;
@@ -938,7 +938,7 @@ namespace SlimeCraft
             ItemEntity.Spawn(s, at, vel, 2f);
         }
 
-        public static System.Collections.IEnumerator SpawnSn(TechType t, int n, Vector3 at, Vector3 vel)
+        public static System.Collections.IEnumerator SpawnSn(Identifiable.Id t, int n, Vector3 at, Vector3 vel)
         {
             for (int i = 0; i < n; i++)
             {
@@ -962,7 +962,7 @@ namespace SlimeCraft
             ItemStack want = null;
             if (t.IsBlock) { var s = BlockWorld.Get(t.Cell); if (s?.Block.Item != null) want = new ItemStack(s.Block.Item); }
             else if (t.Mob != null) want = ItemStack.Of(t.Mob.Type + "_spawn_egg");
-            else if (t.SnObject != null) { var tt = CraftData.GetTechType(t.SnObject); if (tt != TechType.None) want = new ItemStack(tt); }
+            else if (t.SnObject != null) { var tt = CraftData.GetTechType(t.SnObject); if (tt != Identifiable.Id.NONE) want = new ItemStack(tt); }
             if (want == null) return;
             for (int i = 0; i < 9; i++) if (Inventory.Main[i] != null && Inventory.Main[i].SameItem(want)) { Select(i); return; }
             if (!GameMode.Creative)
@@ -978,7 +978,7 @@ namespace SlimeCraft
             if (slot < 0) slot = Inventory.Selected;
             Select(slot);
             want.Count = want.MaxStack;
-            if (want.IsSn) { Inventory.Held = null; if (!SnBridge.IsVirtual(want.Tech)) { SnBridge.GiveReal(want.Tech, 1); return; } }
+            if (want.IsSr) { Inventory.Held = null; if (!SrBridge.IsVirtual(want.Actor)) { SrBridge.GiveReal(want.Actor, 1); return; } }
             Inventory.Held = want;
         }
 
@@ -1000,7 +1000,7 @@ namespace SlimeCraft
             if (!Game.Active || Motor.SuspendedByGame) return true;
             if (button != GameInput.Button.LeftHand && button != GameInput.Button.RightHand && button != GameInput.Button.AltTool) return true;
             var held = Inventory.Held;
-            bool snTool = held != null && held.IsSn && SnItems.IsTool(held.Tech) && SnBridge.HeldTool != null;
+            bool snTool = held != null && held.IsSr && SrItems.IsTool(held.Actor) && SrBridge.HeldTool != null;
             if (snTool && !(button == GameInput.Button.RightHand && Interaction.SuppressSnRight)) return true;
             __result = false;
             return false;
@@ -1008,22 +1008,22 @@ namespace SlimeCraft
     }
 
     /// <summary>Food values of Subnautica items (from their prefab's Eatable), fetched once.</summary>
-    public static class SnFood
+    public static class SrFood
     {
         public class Info { public float Food, Water, Health; }
-        private static readonly Dictionary<TechType, Info> cache = new Dictionary<TechType, Info>();
-        private static readonly HashSet<TechType> loading = new HashSet<TechType>();
+        private static readonly Dictionary<Identifiable.Id, Info> cache = new Dictionary<Identifiable.Id, Info>();
+        private static readonly HashSet<Identifiable.Id> loading = new HashSet<Identifiable.Id>();
 
-        public static Info Get(TechType t)
+        public static Info Get(Identifiable.Id t)
         {
             if (cache.TryGetValue(t, out var i)) return i;
             if (loading.Add(t)) UWE.CoroutineHost.StartCoroutine(Load(t));
             return null;
         }
 
-        public static void Prefetch(TechType t) => Get(t);
+        public static void Prefetch(Identifiable.Id t) => Get(t);
 
-        private static System.Collections.IEnumerator Load(TechType t)
+        private static System.Collections.IEnumerator Load(Identifiable.Id t)
         {
             var task = CraftData.GetPrefabForTechTypeAsync(t, false);
             yield return task;
@@ -1033,7 +1033,7 @@ namespace SlimeCraft
             {
                 var e = prefab.GetComponent<Eatable>();
                 if (e != null) info = new Info { Food = e.foodValue, Water = e.waterValue };
-                if (t == TechType.FirstAidKit) info = new Info { Health = 50f };
+                if (t == Identifiable.Id.FirstAidKit) info = new Info { Health = 50f };
             }
             cache[t] = info;
         }

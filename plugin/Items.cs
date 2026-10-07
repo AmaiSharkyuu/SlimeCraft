@@ -6,13 +6,13 @@ namespace SlimeCraft
 {
     /// <summary>
     /// One inventory stack, either a Minecraft item (with damage, enchantments, potion, colour, contents like
-    /// Minecraft's NBT) or a Subnautica item (a TechType: titanium, a knife, a peeper...). Both games' things live
-    /// side by side in the same hotbar, chests and crafting grids.
+    /// Minecraft's NBT) or a Slime Rancher actor (a slime, a largo, a plort, a carrot, a hen...). Both games' things
+    /// live side by side in the same hotbar, chests and crafting grids.
     /// </summary>
     public class ItemStack
     {
         public ItemDef Item;
-        public TechType Tech = TechType.None;
+        public Identifiable.Id Actor = Identifiable.Id.NONE;
         public int Count = 1;
         public int Damage;
         public Dictionary<string, int> Ench;          // enchantments (also the stored ones of an enchanted book)
@@ -24,7 +24,7 @@ namespace SlimeCraft
         public ItemStack[] Contents;                  // shulker box contents
 
         public ItemStack(ItemDef d, int n = 1) { Item = d; Count = n; }
-        public ItemStack(TechType t, int n = 1) { Tech = t; Count = n; }
+        public ItemStack(Identifiable.Id t, int n = 1) { Actor = t; Count = n; }
 
         public static ItemStack Of(string id, int n = 1)
         {
@@ -33,12 +33,12 @@ namespace SlimeCraft
         }
 
         public bool IsMc => Item != null;
-        public bool IsSn => Tech != TechType.None;
-        public string Id => IsMc ? Item.Id : "sn:" + Tech;
+        public bool IsSr => Actor != Identifiable.Id.NONE;
+        public string Id => IsMc ? Item.Id : "sr:" + Actor;
         public bool Is(string id) => Item != null && Item.Id == id;
         public bool HasTag(string tag) => Item != null && Item.Tags.Contains(tag);
 
-        public int MaxStack => IsMc ? Item.Stack : SnItems.MaxStack(Tech);
+        public int MaxStack => IsMc ? Item.Stack : SrItems.MaxStack(Actor);
         public bool Damageable => IsMc && Item.Durability > 0;
         public bool Enchanted => Ench != null && Ench.Count > 0;
         public int Level(string ench) => Ench != null && Ench.TryGetValue(ench, out var l) ? l : 0;
@@ -54,7 +54,7 @@ namespace SlimeCraft
 
         public bool SameItem(ItemStack o)
         {
-            if (o == null || o.Item != Item || o.Tech != Tech || o.Damage != Damage || o.Potion != Potion || o.CustomName != CustomName || o.Color != Color || o.Flight != Flight) return false;
+            if (o == null || o.Item != Item || o.Actor != Actor || o.Damage != Damage || o.Potion != Potion || o.CustomName != CustomName || o.Color != Color || o.Flight != Flight) return false;
             if (Contents != null || o.Contents != null) return false;
             int a = Ench?.Count ?? 0, b = o.Ench?.Count ?? 0;
             if (a != b) return false;
@@ -67,7 +67,7 @@ namespace SlimeCraft
             get
             {
                 if (CustomName != null) return CustomName;
-                if (IsSn) return SnItems.Name(Tech);
+                if (IsSr) return SrItems.Name(Actor);
                 if (Potion != null && (Item.Id.EndsWith("potion") || Item.Id == "tipped_arrow"))
                 {
                     var prefix = Item.Id == "potion" ? "item.minecraft.potion.effect." : Item.Id == "splash_potion" ? "item.minecraft.splash_potion.effect." : Item.Id == "lingering_potion" ? "item.minecraft.lingering_potion.effect." : "item.minecraft.tipped_arrow.effect.";
@@ -114,10 +114,10 @@ namespace SlimeCraft
             if (t == null || t.Type == JTokenType.Null) return null;
             var id = (string)t["id"];
             ItemStack s;
-            if (id.StartsWith("sn:"))
+            if (id.StartsWith("sr:"))
             {
-                if (!TechTypeExtensions.FromString(id.Substring(3), out var tt, true)) return null;
-                s = new ItemStack(tt, (int)t["n"]);
+                try { s = new ItemStack((Identifiable.Id)System.Enum.Parse(typeof(Identifiable.Id), id.Substring(3)), (int)t["n"]); }
+                catch { return null; }
             }
             else
             {
@@ -153,42 +153,37 @@ namespace SlimeCraft
         public override string ToString() => Count + "x " + Id;
     }
 
-    /// <summary>What SubnautiCraft needs to know about Subnautica's items.</summary>
-    public static class SnItems
+    /// <summary>What SlimeCraft needs to know about Slime Rancher's actors as inventory items.</summary>
+    public static class SrItems
     {
-        private static readonly Dictionary<TechType, int> stack = new Dictionary<TechType, int>();
-
-        public static string Name(TechType t)
+        public static string Name(Identifiable.Id t)
         {
-            try { return Language.main.Get(t.AsString()); } catch { return t.ToString(); }
+            try { return Identifiable.GetName(t, false) ?? t.ToString(); } catch { return t.ToString(); }
         }
 
-        public static bool IsTool(TechType t)
+        public static bool IsTool(Identifiable.Id t) => false;
+        public static bool IsEquipment(Identifiable.Id t) => false;
+
+        /// <summary>Largos one per slot, slimes, chickens and toys 16, everything else (plorts, food, crafts) 64.</summary>
+        public static int MaxStack(Identifiable.Id t)
         {
-            try { return TechData.GetEquipmentType(t) == EquipmentType.Hand; } catch { return false; }
+            if (Identifiable.IsLargo(t)) return 1;
+            if (Identifiable.IsSlime(t) || Identifiable.IsAnimal(t) || Identifiable.IsToy(t) || Identifiable.IsEcho(t)) return 16;
+            return 64;
         }
 
-        public static bool IsEquipment(TechType t)
+        public static Sprite Icon(Identifiable.Id t)
         {
-            try { var e = TechData.GetEquipmentType(t); return e != EquipmentType.None && e != EquipmentType.Hand; } catch { return false; }
+            try { return SRSingleton<GameContext>.Instance.LookupDirector.GetIcon(t); } catch { return null; }
         }
 
-        /// <summary>Tools, equipment, batteries and anything with a charge stay one per slot; everything else stacks to 64.</summary>
-        public static int MaxStack(TechType t)
+        public static Color Color(Identifiable.Id t)
         {
-            if (stack.TryGetValue(t, out var n)) return n;
-            n = 64;
-            if (IsTool(t) || IsEquipment(t)) n = 1;
-            var s = t.ToString();
-            if (s.Contains("Battery") || s.Contains("PowerCell")) n = 1;
-            stack[t] = n;
-            return n;
+            try { return SRSingleton<GameContext>.Instance.LookupDirector.GetColor(t); } catch { return UnityEngine.Color.white; }
         }
 
-        public static Sprite Icon(TechType t)
-        {
-            try { return SpriteManager.Get(t); } catch { return null; }
-        }
+        /// <summary>Slime Rancher food Steve can eat himself: fruits and veggies, like Minecraft's apples and carrots.</summary>
+        public static bool Edible(Identifiable.Id t) => Identifiable.IsFruit(t) || Identifiable.IsVeggie(t);
     }
 
     /// <summary>
@@ -203,6 +198,7 @@ namespace SlimeCraft
         public static ItemStack Cursor;
         public static int Selected;
         public static readonly ItemStack[] EnderChest = new ItemStack[27];
+        public static readonly ItemStack[] SlimeStorage = new ItemStack[45]; // the "Slime Storage" tab
 
         public static ItemStack Held { get => Main[Selected]; set => Main[Selected] = value; }
 
@@ -219,6 +215,7 @@ namespace SlimeCraft
             for (int i = 0; i < Main.Length; i++) Main[i] = null;
             for (int i = 0; i < 4; i++) Armor[i] = null;
             for (int i = 0; i < EnderChest.Length; i++) EnderChest[i] = null;
+            for (int i = 0; i < SlimeStorage.Length; i++) SlimeStorage[i] = null;
             Offhand = null; Cursor = null; Selected = 0;
         }
 
@@ -283,7 +280,6 @@ namespace SlimeCraft
         {
             var h = Held;
             if (h == null || GameMode.Creative) return;
-            if (h.IsSn) { SnBridge.Consume(h.Tech, n); }
             h.Count -= n;
             if (h.Count <= 0) Held = null;
         }
@@ -308,7 +304,7 @@ namespace SlimeCraft
             }
             if (s.Damage >= s.Item.Durability)
             {
-                Sounds.Play("entity.item.break", Player.main != null ? Player.main.transform.position : (Vector3?)null);
+                Sounds.Play("entity.item.break", SrWorld.PlayerPos);
                 Particles.ItemBreak(s);
                 s = null;
             }
@@ -323,6 +319,7 @@ namespace SlimeCraft
                 ["armor"] = ItemStack.SaveList(Armor),
                 ["offhand"] = Offhand?.Save(),
                 ["ender"] = ItemStack.SaveList(EnderChest),
+                ["slimes"] = ItemStack.SaveList(SlimeStorage),
             };
             return o;
         }
@@ -336,6 +333,7 @@ namespace SlimeCraft
             var a = ItemStack.LoadList(o["armor"], 4); for (int i = 0; i < 4; i++) Armor[i] = a[i];
             Offhand = ItemStack.Load(o["offhand"]);
             var e = ItemStack.LoadList(o["ender"], 27); for (int i = 0; i < 27; i++) EnderChest[i] = e[i];
+            var sl = ItemStack.LoadList(o["slimes"], SlimeStorage.Length); for (int i = 0; i < SlimeStorage.Length; i++) SlimeStorage[i] = sl[i];
         }
     }
 }

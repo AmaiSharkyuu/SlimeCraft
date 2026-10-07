@@ -180,10 +180,10 @@ namespace SlimeCraft
                 {
                     var p = live[i];
                     if (++p.Age >= p.Life) { live.RemoveAt(i); continue; }
-                    bool water = SnWorld.IsWater(p.Pos);
+                    bool water = SrWorld.IsWater(p.Pos);
                     p.Vel.y -= water ? p.Gravity * 0.2f : p.Gravity;
                     var next = p.Pos + p.Vel;
-                    if (p.Collide && (BlockWorld.Has(BlockWorld.CellAt(next)) && BlockWorld.Get(BlockWorld.CellAt(next)).FullCube || Physics.Linecast(p.Pos, next, SnWorld.SolidMask, QueryTriggerInteraction.Ignore)))
+                    if (p.Collide && (BlockWorld.Has(BlockWorld.CellAt(next)) && BlockWorld.Get(BlockWorld.CellAt(next)).FullCube || Physics.Linecast(p.Pos, next, SrWorld.SolidMask, QueryTriggerInteraction.Ignore)))
                     { p.Vel = new Vector3(p.Vel.x * 0.7f, 0, p.Vel.z * 0.7f); next = p.Pos; }
                     p.Pos = next;
                     p.Vel *= water ? p.Drag * 0.9f : p.Drag;
@@ -222,8 +222,8 @@ namespace SlimeCraft
             {
                 var feet = p.transform.position - Vector3.up * Motor.EyeHeight;
                 var to = feet + new Vector3(UnityEngine.Random.Range(-range, range), UnityEngine.Random.Range(-range, range), UnityEngine.Random.Range(-range, range));
-                if (Physics.CheckCapsule(to + Vector3.up * 0.31f, to + Vector3.up * 1.49f, 0.3f, SnWorld.SolidMask, QueryTriggerInteraction.Ignore)) continue;
-                if (!Physics.Raycast(to + Vector3.up * 0.1f, Vector3.down, 3f, SnWorld.SolidMask, QueryTriggerInteraction.Ignore) && !SnWorld.IsWater(to)) continue;
+                if (Physics.CheckCapsule(to + Vector3.up * 0.31f, to + Vector3.up * 1.49f, 0.3f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore)) continue;
+                if (!Physics.Raycast(to + Vector3.up * 0.1f, Vector3.down, 3f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) && !SrWorld.IsWater(to)) continue;
                 p.SetPosition(to + Vector3.up * Motor.EyeHeight);
                 Sounds.Play("item.chorus_fruit.teleport", to);
                 return;
@@ -277,7 +277,7 @@ namespace SlimeCraft
             if (bobber == null) return;
             if (Inventory.Held != rod || Player.main == null || (bobber.transform.position - Player.main.transform.position).sqrMagnitude > 32 * 32) { Remove(); return; }
             var p = bobber.transform.position;
-            bool water = SnWorld.IsWater(p);
+            bool water = SrWorld.IsWater(p);
             if (water)
             {
                 vel *= 0.9f;
@@ -290,7 +290,7 @@ namespace SlimeCraft
             {
                 vel.y -= 0.03f;
                 vel *= 0.92f;
-                if (Physics.Linecast(p, p + vel, SnWorld.SolidMask, QueryTriggerInteraction.Ignore) || BlockWorld.Has(BlockWorld.CellAt(p + vel))) vel = Vector3.zero;
+                if (Physics.Linecast(p, p + vel, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) || BlockWorld.Has(BlockWorld.CellAt(p + vel))) vel = Vector3.zero;
             }
             bobber.transform.position = p + vel;
             if (line != null) { line.SetPosition(0, MainCamera.camera.transform.position + MainCamera.camera.transform.right * 0.3f - MainCamera.camera.transform.up * 0.2f); line.SetPosition(1, bobber.transform.position); }
@@ -300,12 +300,12 @@ namespace SlimeCraft
         private static void Reel()
         {
             var at = bobber.transform.position;
-            if (biteTicks > 0 && SnWorld.IsWater(at))
+            if (biteTicks > 0 && SrWorld.IsWater(at))
             {
                 ItemStack catchStack;
                 if (Random.value < 0.5f)
                 {
-                    TechType[] fish = { TechType.Peeper, TechType.Bladderfish, TechType.Boomerang, TechType.GarryFish, TechType.HoleFish, TechType.Hoopfish, TechType.Reginald, TechType.Spadefish, TechType.Eyeye };
+                    Identifiable.Id[] fish = { Identifiable.Id.Peeper, Identifiable.Id.Bladderfish, Identifiable.Id.Boomerang, Identifiable.Id.GarryFish, Identifiable.Id.HoleFish, Identifiable.Id.Hoopfish, Identifiable.Id.Reginald, Identifiable.Id.Spadefish, Identifiable.Id.Eyeye };
                     catchStack = new ItemStack(fish[Random.Range(0, fish.Length)], 1);
                 }
                 else

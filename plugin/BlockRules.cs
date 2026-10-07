@@ -379,7 +379,7 @@ namespace SlimeCraft
             // Subnautica geometry: probe from the block we test towards that cell
             var from = BlockWorld.Center(c - BlockWorld.Offset(BlockWorld.Opposite(face)));
             var dir = (BlockWorld.Center(c) - from).normalized;
-            return Physics.Raycast(from, dir, out var hit, 0.75f, SnWorld.SolidMask, QueryTriggerInteraction.Ignore) && !BlockWorld.CellOf(hit.collider, out _);
+            return Physics.Raycast(from, dir, out var hit, 0.75f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) && !BlockWorld.CellOf(hit.collider, out _);
         }
 
         public static bool Supported(BState s, Vector3Int c)

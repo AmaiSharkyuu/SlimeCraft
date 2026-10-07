@@ -127,7 +127,7 @@ namespace SlimeCraft
         {
             Sounds.Play("entity.generic.explode", at, 4f, (1f + (Random.value - Random.value) * 0.2f) * 0.7f);
             Particles.Explosion(at, power);
-            bool water = SnWorld.IsWater(at);
+            bool water = SrWorld.IsWater(at);
             if (!water)
             {
                 // rays out from the centre, each losing intensity with every block's resistance
@@ -159,7 +159,7 @@ namespace SlimeCraft
                 float dist = Vector3.Distance(pl.transform.position - Vector3.up * 0.9f, at) / q;
                 if (dist <= 1f)
                 {
-                    float exposure = Physics.Linecast(at, pl.transform.position, SnWorld.SolidMask, QueryTriggerInteraction.Ignore) ? 0.3f : 1f;
+                    float exposure = Physics.Linecast(at, pl.transform.position, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) ? 0.3f : 1f;
                     float v = (1f - dist) * exposure;
                     Health.Damage((int)((v * v + v) / 2f * 7f * q + 1f), "explosion");
                     var push = (pl.transform.position - at).normalized * v * (1f - Enchants.Level(Inventory.ArmorIn("legs"), "blast_protection") * 0.15f);
@@ -270,7 +270,7 @@ namespace SlimeCraft
             if (Interaction.BlockRay(from, Vel.normalized, best, out var cell, out var face, out var pt, out var bd)) { best = bd; hitWorld = true; hitPoint = pt; hitNormal = (Vector3)BlockWorld.Offset(face); }
             var m = Mobs.Raycast(from, Vel.normalized, best, out float md);
             if (m != null && !pierced.Contains(m)) { best = md; hitMob = m; hitWorld = false; hitPoint = from + Vel.normalized * md; }
-            if (Physics.SphereCast(from, 0.05f, Vel.normalized, out var h, best, SnWorld.SolidMask, QueryTriggerInteraction.Ignore) && !IgnoreHit(h) && h.collider.GetComponentInParent<Mob>() == null)
+            if (Physics.SphereCast(from, 0.05f, Vel.normalized, out var h, best, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) && !IgnoreHit(h) && h.collider.GetComponentInParent<Mob>() == null)
             {
                 var lm = h.collider.GetComponentInParent<LiveMixin>();
                 if (lm != null && lm.IsAlive() && lm.GetComponent<Creature>() != null && !pierced.Contains(lm)) { hitLive = lm; hitMob = null; hitWorld = false; }
@@ -309,7 +309,7 @@ namespace SlimeCraft
                 return;
             }
             transform.position = to;
-            InWater = SnWorld.IsWater(transform.position);
+            InWater = SrWorld.IsWater(transform.position);
             // drag and gravity (0.99 in air, 0.6 in water; the trident keeps 0.99 underwater)
             float drag = InWater ? (Trident ? 0.99f : 0.6f) : 0.99f;
             Vel *= drag;
@@ -370,7 +370,7 @@ namespace SlimeCraft
             if (Interaction.BlockRay(from, Vel / Mathf.Max(len, 1e-5f), len, out _, out _, out var pt, out var d)) { hit = true; point = pt; len = d; }
             var m = Mobs.Raycast(from, Vel / Mathf.Max(len, 1e-5f), len, out float md);
             if (m != null) { hit = true; mob = m; point = from + Vel.normalized * md; len = md; }
-            if (Physics.SphereCast(from, 0.1f, Vel.normalized, out var h, len, SnWorld.SolidMask, QueryTriggerInteraction.Ignore) && !IgnoreHit(h))
+            if (Physics.SphereCast(from, 0.1f, Vel.normalized, out var h, len, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) && !IgnoreHit(h))
             {
                 hit = true; point = h.point; mob = null;
                 var lm = h.collider.GetComponentInParent<LiveMixin>();
@@ -378,7 +378,7 @@ namespace SlimeCraft
             }
             if (hit) { Impact(point, mob, live); Destroy(gameObject); return; }
             transform.position += Vel;
-            InWater = SnWorld.IsWater(transform.position);
+            InWater = SrWorld.IsWater(transform.position);
             Vel *= InWater ? 0.8f : 0.99f;
             Vel.y -= Item.Is("experience_bottle") ? 0.07f : Item.Item.Id.EndsWith("potion") ? 0.05f : 0.03f;
             if (Age > 400) Destroy(gameObject);

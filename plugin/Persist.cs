@@ -5,7 +5,7 @@ using UnityEngine;
 namespace SlimeCraft
 {
     /// <summary>
-    /// SubnautiCraft's save, one file per Subnautica save slot (BepInEx/plugins/SubnautiCraft/saves/slotXXXX.json),
+    /// SlimeCraft's save, one file per Subnautica save slot (BepInEx/plugins/SlimeCraft/saves/slotXXXX.json),
     /// written whenever Subnautica saves so the two never disagree: inventory, armour, ender chest, game mode,
     /// health extras, hunger saturation, experience, effects, spawn point, game rules, every placed block and
     /// block entity, dropped items and Minecraft mobs.
@@ -50,9 +50,9 @@ namespace SlimeCraft
                 if (File.Exists(f)) { File.Copy(f, f + ".bak", true); File.Delete(f); }
                 File.Move(f + ".tmp", f);
                 Dirty = false;
-                Plugin.Log.LogInfo("saved SubnautiCraft data for " + Slot + " (" + BlockWorld.Blocks.Count + " blocks)");
+                Plugin.Log.LogInfo("saved SlimeCraft data for " + Slot + " (" + BlockWorld.Blocks.Count + " blocks)");
             }
-            catch (System.Exception e) { Plugin.Log.LogError("SubnautiCraft save failed: " + e); }
+            catch (System.Exception e) { Plugin.Log.LogError("SlimeCraft save failed: " + e); }
         }
 
         public static void Load(string slot)
@@ -103,21 +103,21 @@ namespace SlimeCraft
                         mob.Health = (float)m["hp"];
                     }
                 Dirty = false;
-                Plugin.Log.LogInfo("loaded SubnautiCraft data for " + slot + ": " + BlockWorld.Blocks.Count + " blocks");
+                Plugin.Log.LogInfo("loaded SlimeCraft data for " + slot + ": " + BlockWorld.Blocks.Count + " blocks");
             }
-            catch (System.Exception e) { Plugin.Log.LogError("SubnautiCraft load failed (" + f + "): " + e); }
+            catch (System.Exception e) { Plugin.Log.LogError("SlimeCraft load failed (" + f + "): " + e); }
         }
 
         public static int pendingPerspective;
 
         /// <summary>
         /// First time in a save: Minecraft's survival start is an empty inventory; Subnautica's own starting items
-        /// (from its lifepod or from the save) are brought in by SnBridge.
+        /// (from its lifepod or from the save) are brought in by SrBridge.
         /// </summary>
         private static void FirstVisit()
         {
             if (GameMode.Creative) return;
-            Chat.Add("§e" + "SubnautiCraft : tu es Amai dans le monde de Subnautica. E = inventaire, T = chat, F5 = vue, F3+F4 = mode de jeu.");
+            Chat.Add("§e" + "SlimeCraft : tu es Amai dans le monde de Subnautica. E = inventaire, T = chat, F5 = vue, F3+F4 = mode de jeu.");
         }
     }
 }

@@ -52,16 +52,16 @@ namespace SlimeCraft
 
         public static bool IsMcMob(string type) => System.Array.IndexOf(Aquatic, type) >= 0;
 
-        /// <summary>/summon and spawn eggs: a Minecraft aquatic mob, or any Subnautica creature by its TechType name.</summary>
+        /// <summary>/summon and spawn eggs: a Minecraft aquatic mob, or any Subnautica creature by its Identifiable.Id name.</summary>
         public static bool Summon(string type, Vector3 at)
         {
             type = type.Replace("minecraft:", "").ToLowerInvariant();
             if (IsMcMob(type)) { Mob.Create(type, at); return true; }
-            if (SnCreatures.TryGet(type, out var tt)) { UWE.CoroutineHost.StartCoroutine(SpawnSn(tt, at)); return true; }
+            if (SrCreatures.TryGet(type, out var tt)) { UWE.CoroutineHost.StartCoroutine(SpawnSn(tt, at)); return true; }
             return false;
         }
 
-        private static System.Collections.IEnumerator SpawnSn(TechType tt, Vector3 at)
+        private static System.Collections.IEnumerator SpawnSn(Identifiable.Id tt, Vector3 at)
         {
             var task = CraftData.GetPrefabForTechTypeAsync(tt);
             yield return task;
@@ -112,7 +112,7 @@ namespace SlimeCraft
             if (count >= 10) return;
             var p = Player.main.transform.position;
             var at = p + Random.onUnitSphere * Random.Range(24f, 44f);
-            if (!SnWorld.IsWater(at) || Physics.CheckSphere(at, 1f, SnWorld.SolidMask, QueryTriggerInteraction.Ignore)) return;
+            if (!SrWorld.IsWater(at) || Physics.CheckSphere(at, 1f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore)) return;
             float depth = -at.y;
             bool night = DayNightCycle.main != null && !DayNightCycle.main.IsDay();
             string type;
@@ -135,8 +135,8 @@ namespace SlimeCraft
         }
     }
 
-    /// <summary>Subnautica creature names for /summon (TechType names, case-insensitive) and their auto-completion.</summary>
-    public static class SnCreatures
+    /// <summary>Subnautica creature names for /summon (Identifiable.Id names, case-insensitive) and their auto-completion.</summary>
+    public static class SrCreatures
     {
         private static List<string> names;
 
@@ -146,9 +146,9 @@ namespace SlimeCraft
             {
                 if (names != null) return names;
                 names = new List<string>();
-                foreach (TechType t in System.Enum.GetValues(typeof(TechType)))
+                foreach (Identifiable.Id t in System.Enum.GetValues(typeof(Identifiable.Id)))
                 {
-                    if (t == TechType.None) continue;
+                    if (t == Identifiable.Id.NONE) continue;
                     var s = t.ToString();
                     if (IsCreature(t)) names.Add(s.ToLowerInvariant());
                 }
@@ -160,7 +160,7 @@ namespace SlimeCraft
         private static readonly HashSet<string> extra = new HashSet<string> { "seamoth", "exosuit", "cyclops", "rocketbase" };
 
         /// <summary>Creature-ish TechTypes: everything that is a fish, leviathan, critter or egg-hatched animal, plus vehicles.</summary>
-        private static bool IsCreature(TechType t)
+        private static bool IsCreature(Identifiable.Id t)
         {
             var s = t.ToString();
             if (extra.Contains(s.ToLowerInvariant())) return true;
@@ -172,11 +172,11 @@ namespace SlimeCraft
             return false;
         }
 
-        public static bool TryGet(string name, out TechType t)
+        public static bool TryGet(string name, out Identifiable.Id t)
         {
-            foreach (TechType v in System.Enum.GetValues(typeof(TechType)))
+            foreach (Identifiable.Id v in System.Enum.GetValues(typeof(Identifiable.Id)))
                 if (v.ToString().ToLowerInvariant() == name.ToLowerInvariant()) { t = v; return true; }
-            t = TechType.None;
+            t = Identifiable.Id.NONE;
             return false;
         }
     }
@@ -370,7 +370,7 @@ namespace SlimeCraft
             }
             var p = Player.main;
             if (p != null && Natural && (transform.position - p.transform.position).sqrMagnitude > 128 * 128) { Destroy(gameObject); return; }
-            InWater = SnWorld.IsWater(transform.position + Vector3.up * Height * 0.5f);
+            InWater = SrWorld.IsWater(transform.position + Vector3.up * Height * 0.5f);
             foreach (var e in new List<Effects.Inst>(effects.Values))
             {
                 if (e.Id == "poison" && e.Duration % Mathf.Max(1, 25 >> e.Amplifier) == 0 && Health > 1) Damage(1, "magic", 0, Vector3.zero);
@@ -426,7 +426,7 @@ namespace SlimeCraft
                 if (away.magnitude < 12f) { Vel += away.normalized * speed * 1.5f; return; }
                 targetPlayer = false;
             }
-            if (--wanderTicks <= 0 || Physics.Raycast(transform.position, wander, 2f, SnWorld.SolidMask, QueryTriggerInteraction.Ignore))
+            if (--wanderTicks <= 0 || Physics.Raycast(transform.position, wander, 2f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore))
             {
                 wanderTicks = Random.Range(40, 120);
                 wander = Random.onUnitSphere;
@@ -502,7 +502,7 @@ namespace SlimeCraft
             var eye = p.transform.position;
             var from = transform.position + Vector3.up * Height * 0.5f;
             float dist = Vector3.Distance(eye, from);
-            bool sees = dist < 16f && !Physics.Linecast(from, eye, SnWorld.SolidMask, QueryTriggerInteraction.Ignore);
+            bool sees = dist < 16f && !Physics.Linecast(from, eye, SrWorld.SolidMask, QueryTriggerInteraction.Ignore);
             if (Type == "elder_guardian" && Age % 1200 == 0 && dist < 50f) { Effects.Add("mining_fatigue", 6000, 2); Sounds.Play("entity.elder_guardian.curse", null); }
             if (!sees) { beamTicks = 0; SetBeam(false); return; }
             // GuardianEntity.FireBeamGoal: 80 ticks of charging beam, then 6 damage (8 for the elder) plus the attack damage

@@ -16,7 +16,7 @@ namespace SlimeCraft
     {
         private static readonly Dictionary<string, Mesh> meshes = new Dictionary<string, Mesh>();
         private static readonly Dictionary<string, Texture2D> icons = new Dictionary<string, Texture2D>();
-        private static readonly Dictionary<TechType, Texture2D> snTextures = new Dictionary<TechType, Texture2D>();
+        private static readonly Dictionary<Identifiable.Id, Texture2D> snTextures = new Dictionary<Identifiable.Id, Texture2D>();
         private static Material cutoutMat, translucentMat;
 
         public static Material Cutout => cutoutMat != null ? cutoutMat : (cutoutMat = BlockWorld.MakeMat(1));
@@ -80,12 +80,12 @@ namespace SlimeCraft
         public static Mesh MeshFor(ItemStack s, string modelName, out bool blockModel, out bool translucent)
         {
             blockModel = false; translucent = false;
-            if (s.IsSn)
+            if (s.IsSr)
             {
-                var key = "sn:" + s.Tech;
+                var key = "sn:" + s.Actor;
                 if (!meshes.TryGetValue(key, out var mm) || mm == null)
                 {
-                    var tex = SnTexture(s.Tech);
+                    var tex = SnTexture(s.Actor);
                     mm = tex != null ? ExtrudeTexture(tex) : null;
                     if (mm != null) meshes[key] = mm;
                 }
@@ -125,10 +125,10 @@ namespace SlimeCraft
         }
 
         /// <summary>A Subnautica sprite copied out of its atlas into a readable texture (the SN atlas is GPU-only).</summary>
-        public static Texture2D SnTexture(TechType t)
+        public static Texture2D SnTexture(Identifiable.Id t)
         {
             if (snTextures.TryGetValue(t, out var tex) && tex != null) return tex;
-            var sp = SnItems.Icon(t);
+            var sp = SrItems.Icon(t);
             tex = null;
             if (sp != null && sp.texture != null)
             {
@@ -147,13 +147,13 @@ namespace SlimeCraft
         /// Renders a sprite through its own vertices and UVs (Subnautica packs its icons tightly in sprite atlases,
         /// so they cannot be cut out as rectangles), into an n x n point-filtered texture with Minecraft's hard alpha.
         /// </summary>
-        private static readonly Dictionary<TechType, Texture2D> snIcons = new Dictionary<TechType, Texture2D>();
+        private static readonly Dictionary<Identifiable.Id, Texture2D> snIcons = new Dictionary<Identifiable.Id, Texture2D>();
 
         /// <summary>Inventory icon of a Subnautica item at 128 px with soft edges, as crisp as in Subnautica's own UI.</summary>
-        public static Texture2D SnIconHi(TechType t)
+        public static Texture2D SnIconHi(Identifiable.Id t)
         {
             if (snIcons.TryGetValue(t, out var tex) && tex != null) return tex;
-            var sp = SnItems.Icon(t);
+            var sp = SrItems.Icon(t);
             tex = null;
             if (sp != null && sp.texture != null)
             {
@@ -247,7 +247,7 @@ namespace SlimeCraft
             return mb.Build("sn item");
         }
 
-        private static readonly Dictionary<TechType, Material> snMats = new Dictionary<TechType, Material>();
+        private static readonly Dictionary<Identifiable.Id, Material> snMats = new Dictionary<Identifiable.Id, Material>();
 
         /// <summary>
         /// A visual for a stack under `parent`, already placed with the model's display transform for `context`
@@ -264,9 +264,9 @@ namespace SlimeCraft
                 SpecialItems.Build(s, root.transform, layer, context);
                 return root;
             }
-            if (s.IsSn && context != "gui")
+            if (s.IsSr && context != "gui")
             {
-                var model = SnModels.Make(s.Tech, root.transform, layer);
+                var model = SrModels.Make(s.Actor, root.transform, layer);
                 if (model != null)
                 {
                     SnDisplay(root.transform, context);
@@ -281,9 +281,9 @@ namespace SlimeCraft
             inner.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = inner.AddComponent<MeshRenderer>();
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            if (s.IsSn)
+            if (s.IsSr)
             {
-                if (!snMats.TryGetValue(s.Tech, out var mat) || mat == null || mat.mainTexture == null) { mat = BlockWorld.MakeMat(1, SnTexture(s.Tech)); snMats[s.Tech] = mat; }
+                if (!snMats.TryGetValue(s.Actor, out var mat) || mat == null || mat.mainTexture == null) { mat = BlockWorld.MakeMat(1, SnTexture(s.Actor)); snMats[s.Actor] = mat; }
                 mr.sharedMaterial = mat;
             }
             else mr.sharedMaterial = translucent ? Translucent : Cutout;
@@ -355,7 +355,7 @@ namespace SlimeCraft
         public static Texture Icon(ItemStack s, out Rect uv)
         {
             uv = new Rect(0, 0, 1, 1);
-            if (s.IsSn) return SnIconHi(s.Tech);
+            if (s.IsSr) return SnIconHi(s.Actor);
             var modelName = ModelName(s);
             var m = Model(modelName);
             if (m == null) return null;
@@ -384,7 +384,7 @@ namespace SlimeCraft
             const int size = 64;
             if (iconStage == null)
             {
-                iconStage = new GameObject("SubnautiCraft icon stage");
+                iconStage = new GameObject("SlimeCraft icon stage");
                 Object.DontDestroyOnLoad(iconStage);
                 iconStage.transform.position = new Vector3(0, -20000, 0);
                 var camGo = new GameObject("icon cam");

@@ -395,7 +395,7 @@ namespace SlimeCraft
             var c = s.NameColor;
             string code = c == Color.white ? "§f" : c.b > 0.9f && c.r < 0.5f ? "§b" : c.r > 0.9f && c.b > 0.9f ? "§d" : "§e";
             l.Add(code + s.Name);
-            if (s.IsSn) { l.Add("§9Subnautica"); if (Crafting.SnToMc.TryGetValue(s.Tech, out var mc)) l.Add("§7= " + McData.Item(mc)?.Name); return l; }
+            if (s.IsSr) { l.Add("§9Subnautica"); if (Crafting.SnToMc.TryGetValue(s.Actor, out var mc)) l.Add("§7= " + McData.Item(mc)?.Name); return l; }
             if (s.Enchanted)
                 foreach (var kv in s.Ench)
                 {
@@ -521,10 +521,10 @@ namespace SlimeCraft
             else Show(GameMode.Creative ? (McScreen)new CreativeScreen() : new InventoryScreen());
         }
 
-        public static int HeldGridCount(TechType t)
+        public static int HeldGridCount(Identifiable.Id t)
         {
             int n = 0;
-            if (Current != null) foreach (var s in Current.TemporaryStacks()) if (s != null && s.Tech == t) n += s.Count;
+            if (Current != null) foreach (var s in Current.TemporaryStacks()) if (s != null && s.Actor == t) n += s.Count;
             return n;
         }
 
@@ -533,11 +533,11 @@ namespace SlimeCraft
             if (Current != null) foreach (var s in Current.TemporaryStacks()) f(s);
         }
 
-        public static bool TakeFromGrids(TechType t)
+        public static bool TakeFromGrids(Identifiable.Id t)
         {
             if (Current == null) return false;
             foreach (var s in Current.TemporaryStacks())
-                if (s != null && s.Tech == t && s.Count > 0) { s.Count--; return true; }
+                if (s != null && s.Actor == t && s.Count > 0) { s.Count--; return true; }
             return false;
         }
 
@@ -605,7 +605,7 @@ namespace SlimeCraft
         private void Take(ItemStack taken)
         {
             Crafting.Consume(grid);
-            foreach (var s in grid) if (s != null && s.IsSn && !SnBridge.IsVirtual(s.Tech)) { }
+            foreach (var s in grid) if (s != null && s.IsSr && !SrBridge.IsVirtual(s.Actor)) { }
             Update2();
         }
 
@@ -633,7 +633,7 @@ namespace SlimeCraft
             if (rt == null) rt = new RenderTexture(128, 192, 16, RenderTextureFormat.ARGB32) { filterMode = FilterMode.Point };
             if (stage == null)
             {
-                stage = new GameObject("SubnautiCraft preview stage");
+                stage = new GameObject("SlimeCraft preview stage");
                 UnityEngine.Object.DontDestroyOnLoad(stage);
                 stage.transform.position = new Vector3(0, -21000, 0);
                 var cg = new GameObject("cam"); cg.transform.SetParent(stage.transform, false);
@@ -777,7 +777,7 @@ namespace SlimeCraft
         }
 
         /// <summary>Subnautica tools and equipment keep their charge and state only in Subnautica's own storage, so they stay out of Minecraft chests.</summary>
-        public static bool Storable(ItemStack v) => !(v.IsSn && !SnBridge.IsVirtual(v.Tech));
+        public static bool Storable(ItemStack v) => !(v.IsSr && !SrBridge.IsVirtual(v.Actor));
 
         public override void OnOpen()
         {
@@ -835,7 +835,7 @@ namespace SlimeCraft
                 for (int c = 0; c < 9; c++)
                 {
                     int k = r * 9 + c;
-                    Slots.Add(new Slot { X = 8 + c * 18, Y = 18 + r * 18, Get = () => view[k], Set = v => SetSlot(k, v), CanPlace = v => v.IsSn && storage.container.HasRoomFor(v.Tech) });
+                    Slots.Add(new Slot { X = 8 + c * 18, Y = 18 + r * 18, Get = () => view[k], Set = v => SetSlot(k, v), CanPlace = v => v.IsSr && storage.container.HasRoomFor(v.Actor) });
                 }
             AddPlayerInventory(8, 18 + rows * 18 + 13);
             Refresh();
@@ -850,7 +850,7 @@ namespace SlimeCraft
                 int n = storage.container.GetCount(t);
                 while (n > 0 && k < view.Length)
                 {
-                    int m = Mathf.Min(n, SnItems.MaxStack(t));
+                    int m = Mathf.Min(n, SrItems.MaxStack(t));
                     view[k++] = new ItemStack(t, m);
                     n -= m;
                 }
@@ -861,32 +861,32 @@ namespace SlimeCraft
         {
             var before = view[k];
             int had = before != null ? before.Count : 0;
-            var tech = v != null ? v.Tech : before != null ? before.Tech : TechType.None;
+            var tech = v != null ? v.Actor : before != null ? before.Actor : Identifiable.Id.NONE;
             int now = v != null ? v.Count : 0;
-            int diff = now - (before != null && v != null && before.Tech == v.Tech ? had : 0);
-            if (before != null && (v == null || before.Tech != v.Tech))
+            int diff = now - (before != null && v != null && before.Actor == v.Actor ? had : 0);
+            if (before != null && (v == null || before.Actor != v.Actor))
             {
                 // taken out: real objects come out of the locker into the player's possession
                 for (int i = 0; i < had; i++)
                 {
-                    var p = storage.container.RemoveItem(before.Tech);
+                    var p = storage.container.RemoveItem(before.Actor);
                     if (p == null) break;
-                    if (SnBridge.IsVirtual(before.Tech)) UnityEngine.Object.Destroy(p.gameObject);
-                    else { SnBridge.Suspend = true; global::Inventory.main.container.UnsafeAdd(new InventoryItem(p)); SnBridge.Suspend = false; }
+                    if (SrBridge.IsVirtual(before.Actor)) UnityEngine.Object.Destroy(p.gameObject);
+                    else { SrBridge.Suspend = true; global::Inventory.main.container.UnsafeAdd(new InventoryItem(p)); SrBridge.Suspend = false; }
                 }
                 diff = now;
             }
-            if (v != null && diff > 0) UWE.CoroutineHost.StartCoroutine(Store(v.Tech, diff));
+            if (v != null && diff > 0) UWE.CoroutineHost.StartCoroutine(Store(v.Actor, diff));
             else if (v != null && diff < 0)
-                for (int i = 0; i < -diff; i++) { var p = storage.container.RemoveItem(v.Tech); if (p != null) { if (SnBridge.IsVirtual(v.Tech)) UnityEngine.Object.Destroy(p.gameObject); else global::Inventory.main.container.UnsafeAdd(new InventoryItem(p)); } }
+                for (int i = 0; i < -diff; i++) { var p = storage.container.RemoveItem(v.Actor); if (p != null) { if (SrBridge.IsVirtual(v.Actor)) UnityEngine.Object.Destroy(p.gameObject); else global::Inventory.main.container.UnsafeAdd(new InventoryItem(p)); } }
             view[k] = v;
         }
 
-        private System.Collections.IEnumerator Store(TechType t, int n)
+        private System.Collections.IEnumerator Store(Identifiable.Id t, int n)
         {
             for (int i = 0; i < n; i++)
             {
-                if (!SnBridge.IsVirtual(t))
+                if (!SrBridge.IsVirtual(t))
                 {
                     var p = global::Inventory.main.container.RemoveItem(t);
                     if (p != null) { storage.container.AddItem(p); continue; }

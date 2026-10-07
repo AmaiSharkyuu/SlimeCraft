@@ -5,16 +5,15 @@ namespace SlimeCraft
 {
     /// <summary>
     /// Minecraft's player movement, run as real 20 Hz ticks (LivingEntity.travel, PlayerEntity.travel,
-    /// ClientPlayerEntity.tickMovement) on Subnautica's own character controller. All numbers are Minecraft's,
+    /// ClientPlayerEntity.tickMovement) on Slime Rancher's own character controller. All numbers are Minecraft's,
     /// in blocks (= metres) per tick. The camera is interpolated between ticks by View, like Minecraft does.
     ///
     ///  * ground: speed 0.1 (sprint x1.3, sneak x0.3), slipperiness of the Minecraft block underfoot, jump 0.42
-    ///  * water (Subnautica's ocean, moon pools, aquariums): 0.02 accel, drag 0.8 (0.9 sprinting), sinking by
-    ///    gravity/16, space swims up 0.04; sprinting underwater is Minecraft's swimming pose that follows the look
-    ///  * Depth Strider = Subnautica fins, Dolphin's Grace = ultra glide fins or the effect, seaglide = a strong push
+    ///  * water (ponds, rivers): 0.02 accel, drag 0.8 (0.9 sprinting), sinking by gravity/16, space swims up
+    ///    0.04; sprinting underwater is Minecraft's swimming pose that follows the look
     ///  * creative flight (double jump), elytra gliding (jump in the air) and firework boosts
     ///  * fall damage, fly-into-wall damage, exhaustion for the hunger bar
-    /// The game takes over in vehicles, chairs, cinematics and inside the moving Cyclops.
+    /// Slime Rancher's pushes (spring pads, explosions) still reach the player as Minecraft velocity.
     /// </summary>
     public static class Motor
     {
@@ -50,14 +49,12 @@ namespace SlimeCraft
             initialised = false;
         }
 
-        /// <summary>When the game owns the player (vehicles, chairs, cinematics, Cyclops) our motor stands aside.</summary>
-        public static bool GameOwnsPlayer(Player p)
+        /// <summary>When Beatrix is dead (the respawn sequence) Slime Rancher keeps the controller.</summary>
+        public static bool GameOwnsPlayer(vp_FPController c)
         {
-            if (p == null) return true;
-            if (p.GetMode() != Player.Mode.Normal || p.cinematicModeActive || p.GetVehicle() != null) return true;
-            if (p.currentSub != null && p.currentSub.isCyclops) return true;
-            if (!p.liveMixin.IsAlive()) return true;
-            return false;
+            if (c == null) return true;
+            var st = Health.State;
+            return st != null && st.GetCurrHealth() <= 0;
         }
 
         // ------------------------------------------------------------------------------------------------ boxes
@@ -74,7 +71,7 @@ namespace SlimeCraft
         {
             cc.radius = 0.3f;
             cc.height = height;
-            cc.center = new Vector3(0, -eye + height / 2f, 0);
+            cc.center = new Vector3(0, height / 2f, 0); // Slime Rancher's player transform is at the feet
             cc.stepOffset = Mathf.Min(0.6f, height - 0.01f);
             cc.slopeLimit = 50f;
             cc.skinWidth = 0.03f;
@@ -83,32 +80,41 @@ namespace SlimeCraft
         private static bool Fits(Vector3 eyePos, float height, float eye)
         {
             var feet = eyePos - Vector3.up * eye;
-            return !Physics.CheckCapsule(feet + Vector3.up * 0.31f, feet + Vector3.up * (height - 0.31f), 0.29f, SnWorld.SolidMask, QueryTriggerInteraction.Ignore);
+            return !Physics.CheckCapsule(feet + Vector3.up * 0.31f, feet + Vector3.up * (height - 0.31f), 0.29f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore);
         }
 
         // ------------------------------------------------------------------------------------------------ fixed step
 
-        /// <summary>Replaces PlayerController.Update while Minecraft owns the player (every frame).</summary>
-        public static void Fixed(PlayerController pc)
+        private static readonly AccessTools.FieldRef<vp_Controller, bool> grounded = AccessTools.FieldRefAccess<vp_Controller, bool>("m_Grounded");
+        private static readonly AccessTools.FieldRef<vp_Controller, bool> groundedNonMountain = AccessTools.FieldRefAccess<vp_Controller, bool>("m_GroundedNonMountain");
+        private static readonly AccessTools.FieldRef<vp_Controller, Vector3> velocityField = AccessTools.FieldRefAccess<vp_Controller, Vector3>("m_Velocity");
+        private static readonly AccessTools.FieldRef<vp_Controller, float> fallSpeed = AccessTools.FieldRefAccess<vp_Controller, float>("m_FallSpeed");
+        private static readonly AccessTools.FieldRef<vp_FPController, Vector3> externalForce = AccessTools.FieldRefAccess<vp_FPController, Vector3>("m_ExternalForce");
+        private static readonly AccessTools.FieldRef<vp_FPController, Vector3> smoothPos = AccessTools.FieldRefAccess<vp_FPController, Vector3>("m_SmoothPosition");
+        private static readonly AccessTools.FieldRef<vp_FPController, Vector3> moveDirection = AccessTools.FieldRefAccess<vp_FPController, Vector3>("m_MoveDirection");
+
+        /// <summary>Replaces vp_FPController's motor while Minecraft owns the player (every frame).</summary>
+        public static void Fixed(vp_FPController p)
         {
-            var p = pc.player;
-            var gm = (GroundMotor)pc.groundController;
-            var um = pc.underWaterController;
-            var cc = gm.controller;
+            var cc = p.CharacterController;
             if (!initialised)
             {
                 initialised = true;
-                um.SetEnabled(false);
-                gm.SetEnabled(true);
-                pc.activeController = gm;
-                Pos = PrevPos = p.transform.position;
+                // Slime Rancher's stamina run and jetpack are Minecraft's sprint and nothing now.
+                var sr = p.GetComponent<StaminaRun>(); if (sr != null) sr.enabled = false;
+                var jet = p.GetComponent<EnergyJetpack>(); if (jet != null) jet.enabled = false;
+                PoseBox(out float h0, out float e0);
+                ApplyBox(cc, h0, e0);
+                Pos = PrevPos = p.transform.position + Vector3.up * EyeHeight;
             }
-            if (um.enabled) um.SetEnabled(false);
-            if (!gm.enabled || !cc.enabled) { gm.SetEnabled(true); pc.activeController = gm; }
-            if (!pc.useRigidbody.isKinematic) UWE.Utils.SetIsKinematicAndUpdateInterpolation(pc.useRigidbody, true, false);
 
             float dt = Time.deltaTime;
-            if (dt <= 0f || Time.timeScale == 0f) return;
+            if (dt <= 0f || Time.timeScale == 0f) { smoothPos(p) = p.transform.position; return; }
+
+            // Spring pads, explosions and other pushes from Slime Rancher become Minecraft velocity.
+            ref var ext = ref externalForce(p);
+            if (ext.sqrMagnitude > 1e-6f) { Vel += ext * 3f; ext = Vector3.zero; } // per-frame at 60 fps -> blocks per tick
+
             // Minecraft moves by the tick's velocity once per tick; spreading that move over the frames of the tick
             // covers exactly the same distance, but smoothly at the screen's frame rate.
             FrameMove(p, cc, dt);
@@ -121,12 +127,29 @@ namespace SlimeCraft
                 Moving = HorizontalTickSpeed > 0.003f;
                 Stats.Moved(tickDisp);
                 tickDisp = Vector3.zero;
-                Tick(p, pc, cc);
+                Tick(p, cc);
                 HorizontalCollision = false;
             }
             if (guard >= 5) acc = 0;
-            pc.velocity = moveVel * 20f;
-            gm.grounded = OnGround;
+
+            // Tell Slime Rancher what happened, for everything that reads its controller.
+            smoothPos(p) = p.transform.position;
+            grounded(p) = OnGround;
+            groundedNonMountain(p) = OnGround;
+            velocityField(p) = moveVel * 20f;
+            fallSpeed(p) = 0;
+            moveDirection(p) = Vector3.zero;
+        }
+
+        /// <summary>Minecraft's keys by their printed letters: ZQSD on an AZERTY keyboard, WASD otherwise, arrows, or a gamepad.</summary>
+        private static Vector2 MoveKeys()
+        {
+            bool az = Game.DropKey == KeyCode.A;
+            float f = (Input.GetKey(az ? KeyCode.Z : KeyCode.W) || Input.GetKey(KeyCode.UpArrow) ? 1 : 0) - (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow) ? 1 : 0);
+            float r = (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow) ? 1 : 0) - (Input.GetKey(az ? KeyCode.Q : KeyCode.A) || Input.GetKey(KeyCode.LeftArrow) ? 1 : 0);
+            if (f != 0 || r != 0) return new Vector2(r, f);
+            if (!InputDirector.UsingGamepad()) return Vector2.zero;
+            return new Vector2(SRInput.Actions.horizontal, SRInput.Actions.vertical);
         }
 
         private static Vector3 moveVel, tickDisp;
@@ -134,30 +157,29 @@ namespace SlimeCraft
         /// <summary>How far we are between the last 20 Hz tick and the next, counting the time since the last physics step.</summary>
         public static float Partial => Mathf.Clamp01(acc / 0.05f);
 
-        private static void Tick(Player p, PlayerController pc, CharacterController cc)
+        private static void Tick(vp_FPController p, CharacterController cc)
         {
-            PrevPos = p.transform.position;
+            PrevPos = p.transform.position + Vector3.up * EyeHeight;
             PrevEyeHeight = EyeHeight;
             PrevSwimAmount = SwimAmount;
-            bool paused = Screens.Open || Chat.Open || (p.GetPDA() != null && p.GetPDA().isInUse) || !pc.inputEnabled;
+            bool paused = Screens.Open || Chat.Open || SRInput.Instance.GetInputMode() != SRInput.InputMode.DEFAULT;
 
-            // ---- input (Subnautica's bindings for moving so Ezio's ZQSD setup applies; Minecraft keys for the rest)
+            // ---- input
             Vector2 move = Vector2.zero;
             bool jump = false, sneakKey = false, sprintKey = false;
             if (!paused)
             {
-                var md = GameInput.GetMoveDirection();
-                move = new Vector2(Mathf.Clamp(md.x, -1, 1), Mathf.Clamp(md.z, -1, 1));
-                jump = GameInput.GetButtonHeld(GameInput.Button.Jump) || Input.GetKey(KeyCode.Space);
+                move = MoveKeys();
+                jump = SRInput.Actions.jump.IsPressed || Input.GetKey(KeyCode.Space);
                 sneakKey = Input.GetKey(KeyCode.LeftShift) || TestSneak;
                 sprintKey = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
             }
             if (Time.time < TestUntil) { move = TestMove; jump |= TestJump; sprintKey |= TestSprint; }
             bool forward = move.y > 0.8f;
 
-            // ---- water (Minecraft's isTouchingWater / isSubmergedInWater against Subnautica's water surface)
-            float level = SnWorld.WaterLevelAt(p);
-            var eyePos = p.transform.position;
+            // ---- water (Minecraft's isTouchingWater / isSubmergedInWater against Slime Rancher's ponds)
+            var eyePos = p.transform.position + Vector3.up * EyeHeight;
+            float level = SrWorld.WaterLevelAt(p.transform.position + Vector3.up * 0.1f);
             PoseBox(out float boxH, out float eyeH);
             float feetY = eyePos.y - eyeH;
             InWater = level > feetY + 0.001f;
@@ -211,14 +233,11 @@ namespace SlimeCraft
             PoseBox(out boxH, out eyeH);
             if (cc.height != boxH || Mathf.Abs(EyeHeight - eyeH) > 0.001f)
             {
-                // Keep the feet where they are when the box changes: move the eye (transform) instead.
-                float newEye = eyeH;
-                var feet = eyePos - Vector3.up * EyeHeight;
-                if (Fits(feet + Vector3.up * newEye, boxH, newEye) || boxH < cc.height)
+                // The feet stay where they are (they are the transform); the eye moves with the pose.
+                var feet = p.transform.position;
+                if (Fits(feet + Vector3.up * eyeH, boxH, eyeH) || boxH < cc.height)
                 {
-                    p.transform.position = feet + Vector3.up * newEye;
-                    PrevPos += Vector3.up * (newEye - EyeHeight);
-                    EyeHeight = newEye;
+                    EyeHeight = eyeH;
                     ApplyBox(cc, boxH, eyeH);
                 }
             }
@@ -228,7 +247,7 @@ namespace SlimeCraft
             var input = new Vector3(move.x, 0, move.y) * 0.98f;
             if (Sneaking) input *= 0.3f + 0.15f * Enchants.Level(Inventory.ArmorIn("legs"), "swift_sneak");
             LastInput = input;
-            var cam = MainCamera.camera.transform;
+            var cam = Camera.main.transform;
             float yaw = cam.eulerAngles.y;
             var look = cam.forward;
 
@@ -252,7 +271,7 @@ namespace SlimeCraft
                 {
                     float d = look.y;
                     float e = d < -0.2f ? 0.085f : 0.06f;
-                    bool fluidAbove = SnWorld.WaterLevelAt(p) > eyePos.y + 1f;
+                    bool fluidAbove = SrWorld.WaterLevelAt(eyePos) > eyePos.y + 1f;
                     if (d <= 0f || jump || fluidAbove) Vel.y += (d - Vel.y) * e;
                 }
                 float f = Sprinting ? 0.9f : 0.8f;
@@ -260,8 +279,7 @@ namespace SlimeCraft
                 float h = Mathf.Min(3f, Enchants.DepthStrider());
                 if (!OnGround) h *= 0.5f;
                 if (h > 0f) { f += (0.546f - f) * h / 3f; g += (speedAttr - g) * h / 3f; }
-                if (Effects.Has("dolphins_grace") || SnWorld.HasUltraGlideFins()) f = 0.96f;
-                g *= SnWorld.SeaglideBoost(move.y);
+                if (Effects.Has("dolphins_grace")) f = 0.96f;
                 UpdateVelocity(g, input, yaw);
                 if (jump && !Swimming) Vel.y += 0.04f; // LivingEntity.swimUpward
                 if (sneakKey && !Swimming && !Sneaking) Vel.y -= 0.04f; // Minecraft 1.13+: sneaking sinks faster
@@ -276,13 +294,13 @@ namespace SlimeCraft
                     else Vel.y -= Gravity / 16f;
                 }
                 // hop out of the water onto a ledge
-                if (HorizontalCollision && Fits(p.transform.position + new Vector3(Vel.x, Vel.y + 0.6f, Vel.z), boxH, eyeH)) Vel.y = 0.3f;
+                if (HorizontalCollision && Fits(eyePos + new Vector3(Vel.x, Vel.y + 0.6f, Vel.z), boxH, eyeH)) Vel.y = 0.3f;
                 FallDistance = 0;
             }
             else
             {
                 // ---- ground / air / creative flight (LivingEntity.travel last branch + PlayerEntity flying)
-                var under = SnWorld.BlockUnder(p.transform.position - Vector3.up * EyeHeight);
+                var under = SrWorld.BlockUnder(p.transform.position);
                 float slip = under != null ? under.Block.Slipperiness : 0.6f;
                 float friction = OnGround ? slip * 0.91f : 0.91f;
                 float accel;
@@ -351,15 +369,15 @@ namespace SlimeCraft
             Vel += r;
         }
 
-        private static bool Climbing(Player p)
+        private static bool Climbing(vp_FPController p)
         {
-            var feet = p.transform.position - Vector3.up * EyeHeight;
+            var feet = p.transform.position;
             var s = BlockWorld.Get(BlockWorld.CellAt(feet + Vector3.up * 0.1f));
             return s != null && s.Block.Tags.Contains("climbable");
         }
 
         /// <summary>LivingEntity.travel, fall-flying branch, unchanged.</summary>
-        private static void TravelGlide(Vector3 look, CharacterController cc, Player p)
+        private static void TravelGlide(Vector3 look, CharacterController cc, vp_FPController p)
         {
             if (Vel.y > -0.5f) FallDistance = 1f;
             float pitch = -Mathf.Asin(Mathf.Clamp(look.y, -1, 1)); // Minecraft pitch: positive looking down
@@ -391,7 +409,7 @@ namespace SlimeCraft
         // ------------------------------------------------------------------------------------------------ collision
 
         /// <summary>One frame's share of the current tick's movement, with Minecraft's collision rules.</summary>
-        private static void FrameMove(Player p, CharacterController cc, float dt)
+        private static void FrameMove(vp_FPController p, CharacterController cc, float dt)
         {
             float ticks = dt * 20f;
             var disp = moveVel * ticks;
@@ -424,7 +442,7 @@ namespace SlimeCraft
                     if (dmg > 0f) { Sounds.Play(dmg > 4 ? "entity.player.big_fall" : "entity.player.small_fall", p.transform.position); Health.Damage(dmg, "flyIntoWall"); }
                 }
             }
-            // stick to the ground walking down slopes and steps (Minecraft has no slopes, Subnautica does)
+            // stick to the ground walking down slopes and steps (Minecraft has no slopes, Slime Rancher does)
             if (!OnGround && wasGround && moveVel.y <= 0 && !InWater && !Flying && !FallFlying)
             {
                 var pos = p.transform.position;
@@ -444,19 +462,19 @@ namespace SlimeCraft
             tickDisp += actual;
         }
 
-        private static bool GroundProbe(Player p, CharacterController cc)
+        private static bool GroundProbe(vp_FPController p, CharacterController cc)
         {
-            var feet = p.transform.position + cc.center - Vector3.up * (cc.height / 2f);
-            return Physics.SphereCast(feet + Vector3.up * 0.32f, 0.28f, Vector3.down, out _, 0.06f, SnWorld.SolidMask, QueryTriggerInteraction.Ignore);
+            var feet = p.transform.position;
+            return Physics.SphereCast(feet + Vector3.up * 0.32f, 0.28f, Vector3.down, out _, 0.06f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore);
         }
 
         /// <summary>PlayerEntity.adjustMovementForSneaking: drop any axis of the move that would leave the player without ground.</summary>
-        private static Vector3 KeepOnEdge(Player p, Vector3 d)
+        private static Vector3 KeepOnEdge(vp_FPController p, Vector3 d)
         {
             bool Ground(Vector3 off)
             {
-                var feet = p.transform.position - Vector3.up * EyeHeight + off + Vector3.up * 0.4f;
-                return Physics.SphereCast(feet, 0.28f, Vector3.down, out _, 1.0f, SnWorld.SolidMask, QueryTriggerInteraction.Ignore);
+                var feet = p.transform.position + off + Vector3.up * 0.4f;
+                return Physics.SphereCast(feet, 0.28f, Vector3.down, out _, 1.0f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore);
             }
             var h = new Vector3(d.x, 0, d.z);
             if (Ground(h)) return d;
@@ -467,17 +485,17 @@ namespace SlimeCraft
         }
 
         /// <summary>LivingEntity.computeFallDamage: ceil(distance - 3 - jump boost), then Feather Falling / Protection via Health.</summary>
-        private static void Land(Player p, float dist)
+        private static void Land(vp_FPController p, float dist)
         {
             int dmg = Mathf.CeilToInt(dist - 3f - Effects.JumpBoostLevel());
-            var under = SnWorld.BlockUnder(p.transform.position - Vector3.up * EyeHeight);
+            var under = SrWorld.BlockUnder(p.transform.position);
             if (under != null && (under.Block.Id == "hay_block")) dmg = Mathf.CeilToInt(dmg * 0.2f);
             if (under != null && under.Block.Id == "slime_block" && !Sneaking) { Vel.y = -Vel.y; dmg = 0; }
             if (dmg > 0 && !GameMode.Creative)
             {
                 Sounds.Play(dmg > 4 ? "entity.player.big_fall" : "entity.player.small_fall", p.transform.position);
                 Health.Damage(dmg, "fall");
-                Particles.BlockDust(p.transform.position - Vector3.up * EyeHeight, under, Mathf.Min(40, 5 + dmg * 5));
+                Particles.BlockDust(p.transform.position, under, Mathf.Min(40, 5 + dmg * 5));
             }
             else if (dist > 0.6f) PlayStep(p, 0.3f);
         }
@@ -486,7 +504,7 @@ namespace SlimeCraft
 
         private static float stepDist, nextStep = 1f;
 
-        private static void Footsteps(Player p)
+        private static void Footsteps(vp_FPController p)
         {
             if (!OnGround || Sneaking && !Moving) return;
             stepDist += HorizontalTickSpeed * 0.6f;
@@ -498,51 +516,54 @@ namespace SlimeCraft
             }
         }
 
-        /// <summary>Step sound of what is underfoot: a Minecraft block's sound group, or the Subnautica surface's look-alike.</summary>
-        public static void PlayStep(Player p, float volume)
+        /// <summary>Step sound of what is underfoot: a Minecraft block's sound group, or the Slime Rancher surface's look-alike.</summary>
+        public static void PlayStep(vp_FPController p, float volume)
         {
-            var feet = p.transform.position - Vector3.up * EyeHeight;
-            var under = SnWorld.BlockUnder(feet);
-            string group = under != null ? under.Block.Sound : SnWorld.SurfaceSound(feet);
+            var feet = p.transform.position;
+            var under = SrWorld.BlockUnder(feet);
+            string group = under != null ? under.Block.Sound : SrWorld.SurfaceSound(feet);
             if (InWater) { Sounds.Play("entity.player.swim", feet, 0.05f); return; }
             Sounds.Play(Sounds.BlockEvent(group, "step"), feet, volume, 1f);
         }
     }
 
-    /// <summary>Hands the player to Minecraft's motor when it is ours to drive.</summary>
+    /// <summary>Hands Slime Rancher's player controller to Minecraft's motor when it is ours to drive.</summary>
     [HarmonyPatch]
     internal static class MotorPatches
     {
-        [HarmonyPatch(typeof(PlayerController), "FixedUpdate"), HarmonyPrefix]
-        private static bool Fixed(PlayerController __instance)
+        [HarmonyPatch(typeof(vp_FPController), "FixedUpdate"), HarmonyPrefix]
+        private static bool Fixed(vp_FPController __instance)
         {
             if (!Game.Active) return true;
-            Motor.SuspendedByGame = Motor.GameOwnsPlayer(__instance.player);
+            Motor.SuspendedByGame = Motor.GameOwnsPlayer(__instance);
             if (Motor.SuspendedByGame) { Motor.Reset(); return true; }
             return false;
         }
 
-        [HarmonyPatch(typeof(PlayerController), "Update"), HarmonyPrefix]
-        private static bool PcUpdate(PlayerController __instance)
+        // vp_FPController.Update ends with SmoothMove: that is where the per-frame Minecraft motor runs.
+        [HarmonyPatch(typeof(vp_FPController), "SmoothMove"), HarmonyPrefix]
+        private static bool Smooth(vp_FPController __instance)
         {
-            if (!Game.Active) return true;
-            Motor.SuspendedByGame = Motor.GameOwnsPlayer(__instance.player);
-            if (Motor.SuspendedByGame) return true;
+            if (!Game.Active || Motor.SuspendedByGame) return true;
             Motor.Fixed(__instance);
             return false;
         }
 
-        // Subnautica's own handling of the controller size (swim vs stand) would fight our pose boxes.
-        [HarmonyPatch(typeof(PlayerController), nameof(PlayerController.ForceControllerSize)), HarmonyPrefix]
-        private static bool NoForce(ref Vector3 __result) { if (!Game.Active || Motor.SuspendedByGame) return true; __result = Vector3.zero; return false; }
-
-        [HarmonyPatch(typeof(PlayerController), nameof(PlayerController.SetMotorMode)), HarmonyPostfix]
-        private static void AfterMotorMode(PlayerController __instance)
+        // Teleporters, respawns and commands: the character controller keeps its old physics position until
+        // transforms are synced, and would drag the player back on its next move.
+        [HarmonyPatch(typeof(vp_FPController), nameof(vp_FPController.SetPosition)), HarmonyPostfix]
+        private static void Teleported(Vector3 position)
         {
-            if (!Game.Active || Motor.SuspendedByGame) return;
-            __instance.underWaterController.SetEnabled(false);
-            __instance.groundController.SetEnabled(true);
-            __instance.activeController = __instance.groundController;
+            if (!Game.Active) return;
+            Motor.Vel = Vector3.zero;
+            Motor.FallDistance = 0;
+            Motor.Pos = Motor.PrevPos = position + Vector3.up * Motor.EyeHeight;
+            Physics.SyncTransforms();
         }
+
+        // Slime Rancher's run, jump, jetpack and vac trigger are Minecraft's business now.
+        [HarmonyPatch(typeof(vp_FPInput), "InputRun"), HarmonyPrefix] private static bool NoRun() => !Game.Active;
+        [HarmonyPatch(typeof(vp_FPInput), "InputJump"), HarmonyPrefix] private static bool NoJump() => !Game.Active;
+        [HarmonyPatch(typeof(vp_FPInput), "InputAttack"), HarmonyPrefix] private static bool NoAttack() => !Game.Active;
     }
 }

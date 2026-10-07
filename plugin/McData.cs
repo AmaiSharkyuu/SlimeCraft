@@ -167,6 +167,68 @@ namespace SlimeCraft
 
         public static string T(string key, string fallback = null) => Lang.TryGetValue(key, out var v) ? v : fallback ?? key;
 
+        // ------------------------------------------------------------------------------------------------ language
+
+        public static string LangCode = "";
+        public static string ForceLang; // set by the debug channel to test translations
+        public static bool French => (LangCode.Length > 0 ? LangCode : GameLangCode()) == "fr_fr";
+
+        /// <summary>Minecraft's own translation file for the language Slime Rancher is set to (English as a fallback).</summary>
+        public static string GameLangCode()
+        {
+            if (!string.IsNullOrEmpty(ForceLang)) return ForceLang;
+            try
+            {
+                switch (SRSingleton<GameContext>.Instance.MessageDirector.GetCultureLang())
+                {
+                    case MessageDirector.Lang.DE: return "de_de";
+                    case MessageDirector.Lang.ES: return "es_es";
+                    case MessageDirector.Lang.FR: return "fr_fr";
+                    case MessageDirector.Lang.RU: return "ru_ru";
+                    case MessageDirector.Lang.SV: return "sv_se";
+                    case MessageDirector.Lang.ZH: return "zh_cn";
+                    case MessageDirector.Lang.JA: return "ja_jp";
+                    case MessageDirector.Lang.PT: return "pt_br";
+                    case MessageDirector.Lang.KO: return "ko_kr";
+                }
+            }
+            catch { }
+            return "en_us";
+        }
+
+        /// <summary>Switches Minecraft's texts (item and block names, messages, screens) to Slime Rancher's language.</summary>
+        public static void FollowGameLanguage()
+        {
+            if (!Loaded) return;
+            var code = GameLangCode();
+            if (code == LangCode) return;
+            var p = Path.Combine(Root, "lang", code + ".json");
+            if (!File.Exists(p)) { if (LangCode.Length > 0) return; p = Path.Combine(Root, "lang", "en_us.json"); code = "en_us"; }
+            if (!File.Exists(p)) return;
+            LangCode = code;
+            var o = JObject.Parse(File.ReadAllText(p, System.Text.Encoding.UTF8));
+            foreach (var kv in o) Lang[kv.Key] = (string)kv.Value;
+            foreach (var b in Blocks.Values) b.Name = T("block.minecraft." + b.Id, b.Name);
+            foreach (var i in ItemList) i.Name = T(Lang.ContainsKey("item.minecraft." + i.Id) ? "item.minecraft." + i.Id : "block.minecraft." + i.Id, i.Name);
+            Plugin.Log.LogInfo("Minecraft texts in " + code);
+        }
+
+        /// <summary>SlimeCraft's own few words, in French or English (English for the other languages).</summary>
+        public static string ModText(string key)
+        {
+            switch (key)
+            {
+                case "rightClick": return French ? "Clic droit" : "Right click";
+                case "slimeStorage": return French ? "Stockage de Slime" : "Slime Storage";
+                case "slimeRancher": return "Slime Rancher";
+                case "missingAssets":
+                    return French
+                        ? "SlimeCraft : les textures et sons de Minecraft ne sont pas encore extraits.\nFerme le jeu et lance SlimeCraft-Assets.exe (dans BepInEx\\plugins\\SlimeCraft), il faut Minecraft 1.20.1."
+                        : "SlimeCraft: Minecraft's textures and sounds have not been extracted yet.\nClose the game and run SlimeCraft-Assets.exe (in BepInEx\\plugins\\SlimeCraft); Minecraft 1.20.1 is needed.";
+            }
+            return key;
+        }
+
         public static string Tf(string key, params object[] args)
         {
             var s = T(key);

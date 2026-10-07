@@ -65,7 +65,7 @@ namespace SlimeCraft
         {
             if (host == null)
             {
-                host = new GameObject("SubnautiCraft Sounds");
+                host = new GameObject("SlimeCraft Sounds");
                 Object.DontDestroyOnLoad(host);
                 pool.Clear();
             }

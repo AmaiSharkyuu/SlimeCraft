@@ -5,33 +5,16 @@ using UnityEngine;
 
 namespace SlimeCraft
 {
-    /// <summary>
-    /// Minecraft's game modes, tied to Subnautica's: creative also switches Subnautica to its creative rules
-    /// (no oxygen, no cost, no blueprints needed...), survival puts the save's own rules back.
-    /// </summary>
+    /// <summary>Minecraft's game modes: survival and creative (F3+F4 or /gamemode), saved with each Slime Rancher game.</summary>
     public static class GameMode
     {
         public static bool Creative;
         public static bool Spectator; // reserved
-        private static GameModeOption savedMode = GameModeOption.None;
-        private const GameModeOption CreativeFlags = GameModeOption.NoSurvival | GameModeOption.NoCost | GameModeOption.NoBlueprints | GameModeOption.NoEnergy | GameModeOption.NoPressure | GameModeOption.NoOxygen | GameModeOption.NoRadiation;
 
         public static void Set(bool creative, bool announce = true)
         {
             Creative = creative;
-            GameModeUtils.GetGameMode(out var mode, out var cheats);
-            if (creative)
-            {
-                if (savedMode == GameModeOption.None) savedMode = mode;
-                GameModeUtils.SetGameMode(mode | CreativeFlags, cheats);
-            }
-            else
-            {
-                var back = savedMode != GameModeOption.None ? savedMode : (mode & ~CreativeFlags);
-                if ((back & GameModeOption.NoSurvival) != 0 && (back & GameModeOption.NoCost) != 0) back = GameModeOption.Survival; // the save was creative itself
-                GameModeUtils.SetGameMode(back, cheats);
-                Motor.Flying = false;
-            }
+            if (!creative) Motor.Flying = false;
             Persist.Dirty = true;
             if (announce)
             {
@@ -44,10 +27,10 @@ namespace SlimeCraft
     }
 
     /// <summary>
-    /// Minecraft health on top of Subnautica's: 20 Minecraft health points are Subnautica's 100, so a heart is 10.
+    /// Minecraft health on top of Slime Rancher's: 20 Minecraft health points are Beatrix's 100, so a heart is 10.
     /// Damage from Minecraft (falls, walls, starving, mobs) goes through Minecraft's armour, Protection enchantments,
-    /// Resistance and absorption first; damage from Subnautica (bites, heat, explosions) is converted to Minecraft
-    /// points and goes through the same armour maths before Subnautica applies it.
+    /// Resistance and absorption first; damage from Slime Rancher (tarr bites, rad, explosions) is converted to
+    /// Minecraft points and goes through the same armour maths before Slime Rancher applies it.
     /// </summary>
     public static class Health
     {
@@ -55,27 +38,40 @@ namespace SlimeCraft
         public static float Absorption;
         public static int HurtTime, InvulnerableTicks;
         private static bool ours;
+        private static float healBuffer;
         public static string LastCause = "generic";
 
-        public static LiveMixin Live => Player.main != null ? Player.main.liveMixin : null;
-        public static float Hp => Live != null ? Live.health / Scale : 20f;
-        public static float MaxHp => Live != null ? Live.maxHealth / Scale : 20f;
+        public static PlayerState State => SRSingleton<SceneContext>.Instance != null ? SRSingleton<SceneContext>.Instance.PlayerState : null;
+        public static float Hp => State != null ? State.GetCurrHealth() / Scale : 20f;
+        public static float MaxHp => State != null ? State.GetMaxHealth() / Scale : 20f;
 
         public static void Heal(float mcHp)
         {
-            if (Live == null || mcHp <= 0) return;
-            Live.AddHealth(mcHp * Scale);
+            var st = State;
+            if (st == null || mcHp <= 0) return;
+            // Slime Rancher heals in whole points; keep the fractions of Minecraft's half-heart heals until they add up.
+            healBuffer += mcHp * Scale;
+            int whole = (int)healBuffer;
+            if (whole <= 0) return;
+            healBuffer -= whole;
+            st.Heal(whole);
         }
 
         /// <summary>Minecraft damage by cause: fall, flyIntoWall, starve, drown, mob, player, explosion, fire, magic, generic.</summary>
         public static void Damage(float amount, string cause, GameObject dealer = null)
         {
-            if (Live == null || amount <= 0 || GameMode.Creative && cause != "outOfWorld" && cause != "kill") return;
+            var pl = SrWorld.Player;
+            if (pl == null || amount <= 0 || GameMode.Creative && cause != "outOfWorld" && cause != "kill") return;
             float d = Reduce(amount, cause);
             if (d <= 0) return;
             LastCause = cause;
             ours = true;
-            try { Live.TakeDamage(d * Scale, Player.main.transform.position, cause == "fire" ? DamageType.Fire : cause == "explosion" ? DamageType.Explosive : DamageType.Normal, dealer); }
+            try
+            {
+                var pd = pl.GetComponent<PlayerDamageable>();
+                int hp = Mathf.Max(1, Mathf.RoundToInt(d * Scale));
+                if (pd != null) pd.Damage(hp, dealer); else State?.Damage(hp, dealer);
+            }
             finally { ours = false; }
         }
 
@@ -110,25 +106,21 @@ namespace SlimeCraft
             return damage * (1f - g / 25f);
         }
 
-        /// <summary>Subnautica damage to the player: Minecraft's armour and enchantments reduce it, creative cancels it.</summary>
-        internal static bool Incoming(LiveMixin lm, ref float damage, DamageType type)
+        /// <summary>Slime Rancher damage to the player: Minecraft's armour and enchantments reduce it, creative cancels it.</summary>
+        internal static bool Incoming(ref int damage, GameObject source)
         {
-            if (ours || Player.main == null || lm != Player.main.liveMixin) return true;
+            if (ours) return true;
             if (GameMode.Creative) return false;
-            string cause;
-            switch (type)
+            string cause = "mob";
+            if (source != null)
             {
-                case DamageType.Heat: case DamageType.Fire: cause = "fire"; break;
-                case DamageType.Explosive: cause = "explosion"; break;
-                case DamageType.Starve: cause = "starve"; break;
-                case DamageType.Poison: case DamageType.Acid: case DamageType.Radiation: case DamageType.Smoke: cause = "poison"; break;
-                case DamageType.Pressure: case DamageType.Cold: case DamageType.Electrical: cause = "magic"; break;
-                default: cause = "mob"; break;
+                var n = source.name.ToLowerInvariant();
+                if (n.Contains("fire") || n.Contains("lava")) cause = "fire";
+                else if (n.Contains("boom") || n.Contains("explo")) cause = "explosion";
             }
-            if (type == DamageType.Starve && Player.main.GetComponent<OxygenManager>() != null && Player.main.GetOxygenAvailable() <= 0) cause = "drown";
             LastCause = cause;
             float mc = Reduce(damage / Scale, cause);
-            damage = mc * Scale;
+            damage = Mathf.RoundToInt(mc * Scale);
             return damage > 0;
         }
 
@@ -142,21 +134,28 @@ namespace SlimeCraft
     [HarmonyPatch]
     internal static class HealthPatches
     {
-        [HarmonyPatch(typeof(LiveMixin), nameof(LiveMixin.TakeDamage)), HarmonyPrefix]
-        private static bool Take(LiveMixin __instance, ref float originalDamage, DamageType type, ref bool __result)
+        [HarmonyPatch(typeof(PlayerDamageable), nameof(PlayerDamageable.Damage)), HarmonyPrefix]
+        private static bool Take(ref int healthLoss, GameObject source, ref bool __result)
         {
             if (!Game.Active) return true;
-            bool go = Health.Incoming(__instance, ref originalDamage, type);
-            if (!go) { __result = false; return false; }
+            if (!Health.Incoming(ref healthLoss, source)) { __result = false; return false; }
             return true;
         }
 
-        [HarmonyPatch(typeof(LiveMixin), nameof(LiveMixin.TakeDamage)), HarmonyPostfix]
-        private static void Took(LiveMixin __instance, float originalDamage, bool __result)
+        [HarmonyPatch(typeof(PlayerDamageable), nameof(PlayerDamageable.Damage)), HarmonyPostfix]
+        private static void Took(int healthLoss)
         {
-            if (!Game.Active || Player.main == null || __instance != Player.main.liveMixin || originalDamage <= 0.01f) return;
+            if (!Game.Active || healthLoss <= 0) return;
             Health.HurtTime = 10;
-            Sounds.Play("entity.player.hurt", Player.main.transform.position);
+            Sounds.Play("entity.player.hurt", SrWorld.PlayerPos);
+        }
+
+        // Creative players cannot be hurt by anything that goes straight to Beatrix's health either.
+        [HarmonyPatch(typeof(PlayerState), nameof(PlayerState.Damage)), HarmonyPrefix]
+        private static bool NoStateDamage(ref bool __result)
+        {
+            if (Game.Active && GameMode.Creative) { __result = false; return false; }
+            return true;
         }
     }
 
@@ -169,7 +168,7 @@ namespace SlimeCraft
             {
                 int n = 0;
                 foreach (var a in Inventory.Armor) if (a != null && a.IsMc) n += a.Item.Armor;
-                if (SnWorld.WearsReinforcedSuit()) n += 4;
+                if (SrWorld.WearsReinforcedSuit()) n += 4;
                 return Mathf.Min(n, 30);
             }
         }
@@ -210,19 +209,18 @@ namespace SlimeCraft
     }
 
     /// <summary>
-    /// Minecraft's HungerManager on Subnautica's food bar: Minecraft's 20 food points are Subnautica's 100 food.
-    /// Saturation and exhaustion are Minecraft's own; spending exhaustion eats saturation first, then food,
-    /// and a full stomach heals like in Minecraft (natural regeneration).
+    /// Minecraft's HungerManager: 20 food points, saturation and exhaustion, healing on a full stomach and starving
+    /// on an empty one. Slime Rancher's fruits and veggies count as food, next to Minecraft's own.
     /// </summary>
     public static class Hunger
     {
         public static float Saturation = 5f, Exhaustion;
         private static int foodTimer;
         public static int PrevFood = 20;
+        public static int FoodLevel = 20;
 
-        private static Survival Sv => Player.main != null ? Player.main.GetComponent<Survival>() : null;
-        public static int Food => Sv != null ? Mathf.Clamp(Mathf.CeilToInt(Sv.food / 5f), 0, 20) : 20;
-        public static float Water => Sv != null ? Sv.water : 100f;
+        public static int Food => Mathf.Clamp(FoodLevel, 0, 20);
+        public static float Water => 100f;
 
         public static bool CanEat(bool always) => always || Food < 20 || GameMode.Creative;
 
@@ -234,33 +232,23 @@ namespace SlimeCraft
 
         public static void Eat(int food, float satMod)
         {
-            var sv = Sv;
-            if (sv == null) return;
-            float before = sv.food;
-            sv.food = Mathf.Min(sv.food + food * 5f, 100f);
-            Saturation = Mathf.Min(Saturation + food * satMod * 2f, Food);
+            FoodLevel = Mathf.Min(FoodLevel + food, 20);
+            Saturation = Mathf.Min(Saturation + food * satMod * 2f, FoodLevel);
         }
 
-        public static void Drink(float water)
-        {
-            var sv = Sv;
-            if (sv == null) return;
-            sv.water = Mathf.Clamp(sv.water + water, 0, 100f);
-        }
+        public static void Drink(float water) { }
 
         public static void Tick()
         {
-            var sv = Sv;
-            if (sv == null || GameMode.Creative) return;
+            if (GameMode.Creative) return;
             PrevFood = Food;
             if (Exhaustion > 4f)
             {
                 Exhaustion -= 4f;
                 if (Saturation > 0f) Saturation = Mathf.Max(Saturation - 1f, 0f);
-                else sv.food = Mathf.Max(sv.food - 5f, 0f);
+                else FoodLevel = Mathf.Max(FoodLevel - 1, 0);
             }
-            var lm = Health.Live;
-            bool canHeal = lm != null && lm.health > 0 && lm.health < lm.maxHealth;
+            bool canHeal = Health.Hp > 0 && Health.Hp < Health.MaxHp;
             int food = Food;
             if (Saturation > 0f && canHeal && food >= 20)
             {
@@ -283,8 +271,12 @@ namespace SlimeCraft
             }
             else if (food <= 0)
             {
-                // Subnautica already starves the player on its own; Minecraft's starvation is left to it.
-                foodTimer = 0;
+                // Minecraft's normal difficulty: starving takes you down to half a heart... here, to 5 hearts.
+                if (++foodTimer >= 80)
+                {
+                    if (Health.Hp > 10f) Health.Damage(1f, "starve");
+                    foodTimer = 0;
+                }
             }
             else foodTimer = 0;
         }
@@ -330,7 +322,7 @@ namespace SlimeCraft
 
         private static void ApplyHealthBoost()
         {
-            // Subnautica's maximum health lives in shared data, so Health Boost's extra hearts are given as absorption instead
+            // Beatrix's maximum health belongs to her upgrades, so Health Boost's extra hearts are given as absorption instead
             if (Active.TryGetValue("health_boost", out var hb)) Health.Absorption = Mathf.Max(Health.Absorption, 4f * (hb.Amplifier + 1));
         }
 
@@ -360,13 +352,12 @@ namespace SlimeCraft
                 }
                 if (--e.Duration <= 0 && e.Duration > -1000000) Remove(e.Id);
             }
-            // Water Breathing and Conduit Power: Subnautica's oxygen stops running out.
-            // Night Vision: a soft light around the head reaching into Subnautica's dark depths.
+            // Night Vision: a soft light around the head reaching into the night and the caves.
             bool nv = Has("night_vision");
-            if (nv && nightLight == null && MainCamera.camera != null)
+            if (nv && nightLight == null && Camera.main != null)
             {
                 var go = new GameObject("mc night vision");
-                go.transform.SetParent(MainCamera.camera.transform, false);
+                go.transform.SetParent(Camera.main.transform, false);
                 nightLight = go.AddComponent<Light>();
                 nightLight.type = LightType.Point;
                 nightLight.range = 70f;
@@ -375,15 +366,7 @@ namespace SlimeCraft
                 nightLight.shadows = LightShadows.None;
             }
             if (nightLight != null) nightLight.enabled = nv;
-            bool invis = Has("invisibility");
-            if (invis != invisSet)
-            {
-                invisSet = invis;
-                if (invis) GameModeUtils.ActivateCheat(GameModeOption.NoAggression); else GameModeUtils.DeactivateCheat(GameModeOption.NoAggression);
-            }
         }
-
-        private static bool invisSet;
 
         public static JArray Save()
         {
@@ -396,26 +379,6 @@ namespace SlimeCraft
         {
             Active.Clear();
             if (t is JArray a) foreach (var e in a) Active[(string)e["id"]] = new Inst { Id = (string)e["id"], Duration = (int)e["d"], Amplifier = (int)e["a"] };
-        }
-    }
-
-    [HarmonyPatch]
-    internal static class OxygenPatches
-    {
-        // Water breathing / conduit power: breathing underwater like Minecraft's turtle helmet or potion.
-        [HarmonyPatch(typeof(OxygenManager), nameof(OxygenManager.RemoveOxygen)), HarmonyPrefix]
-        private static bool NoLoss(ref float __result, float amountToRemove)
-        {
-            if (!Game.Active || !(Effects.Has("water_breathing") || Effects.Has("conduit_power") || TurtleHelmet())) return true;
-            __result = amountToRemove;
-            return false;
-        }
-
-        private static bool TurtleHelmet()
-        {
-            // the turtle helmet gives 10 s of water breathing when going under; simplified to while the head is above water + 10 s
-            var h = Inventory.ArmorIn("head");
-            return h != null && h.Is("turtle_helmet") && Effects.Has("water_breathing");
         }
     }
 
@@ -497,37 +460,33 @@ namespace SlimeCraft
         }
     }
 
-    /// <summary>Enchantment helpers for movement and digging, with Subnautica's fins counting as Depth Strider.</summary>
+    /// <summary>Enchantment helpers for movement and digging.</summary>
     public static class Enchants
     {
         public static int Level(ItemStack s, string e) => s == null ? 0 : s.Level(e);
 
         public static float DepthStrider()
         {
-            int lvl = Level(Inventory.ArmorIn("feet"), "depth_strider");
-            if (SnWorld.HasFins()) lvl = Mathf.Max(lvl, 2);
-            if (SnWorld.HasUltraGlideFins()) lvl = 3;
-            return lvl;
+            return Level(Inventory.ArmorIn("feet"), "depth_strider");
         }
     }
 
-    /// <summary>Sleeping in a Minecraft bed: like Subnautica's bed, it skips the night.</summary>
+    /// <summary>Sleeping in a Minecraft bed: like Slime Rancher's ranch house, it fast-forwards to the morning.</summary>
     public static class Sleep
     {
         public static bool Try(Vector3Int c, BState s)
         {
-            var dnc = DayNightCycle.main;
-            if (dnc == null) return false;
-            if (dnc.IsDay())
+            var td = SRSingleton<SceneContext>.Instance?.TimeDirector;
+            if (td == null) return false;
+            float h = td.CurrHour();
+            if (h >= 6f && h < 19f)
             {
                 Chat.ActionBar(McData.T("block.minecraft.bed.no_sleep"));
                 return true;
             }
-            Chat.ActionBar(McData.T("block.minecraft.set_spawn", "Point de réapparition défini"));
+            Chat.ActionBar(McData.T("block.minecraft.set_spawn", "Respawn point set"));
             Persist.Spawn = BlockWorld.Center(c) + Vector3.up;
-            // Subnautica's day lasts 1200 s; wake up at the same morning hour Subnautica's own bed does.
-            float skip = Mathf.Repeat(0.3f - dnc.GetDayScalar(), 1f) * 1200f;
-            dnc.SkipTime(skip, 3f);
+            td.FastForwardTo(td.GetHourAfter(h >= 19f ? 1 : 0, 6f));
             return true;
         }
     }

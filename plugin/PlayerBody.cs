@@ -28,7 +28,7 @@ namespace SlimeCraft
 
         public static PlayerBody Create(Texture2D skin, bool slim)
         {
-            var go = new GameObject("SubnautiCraft Amai");
+            var go = new GameObject("SlimeCraft Amai");
             var b = go.AddComponent<PlayerBody>();
             b.slim = slim;
             var root = Models.Player(slim);
@@ -273,7 +273,7 @@ namespace SlimeCraft
         private void UpdateHeld()
         {
             var s = Inventory.Held;
-            var key = s == null ? "" : s.Id + s.Damage + s.Potion + s.Color + (s.IsSn && SnModels.Ready(s.Tech) ? "3d" : "");
+            var key = s == null ? "" : s.Id + s.Damage + s.Potion + s.Color + (s.IsSr && SrModels.Ready(s.Actor) ? "3d" : "");
             if (key == heldKey && (held != null || s == null)) return;
             heldKey = key;
             if (held != null) Destroy(held);

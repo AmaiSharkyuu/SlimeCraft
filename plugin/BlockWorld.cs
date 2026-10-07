@@ -308,7 +308,7 @@ namespace SlimeCraft
         {
             if (root == null)
             {
-                root = new GameObject("SubnautiCraft Blocks");
+                root = new GameObject("SlimeCraft Blocks");
                 Object.DontDestroyOnLoad(root);
             }
             chunks.TryGetValue(chunkPos, out var ch);
@@ -497,7 +497,7 @@ namespace SlimeCraft
         {
             if (Time.time < next) return;
             next = Time.time + 0.5f;
-            if (root == null) { root = new GameObject("SubnautiCraft Lights"); Object.DontDestroyOnLoad(root); }
+            if (root == null) { root = new GameObject("SlimeCraft Lights"); Object.DontDestroyOnLoad(root); }
             var near = new List<KeyValuePair<Vector3Int, int>>(emitters);
             near.Sort((a, b) => (BlockWorld.Center(a.Key) - player).sqrMagnitude.CompareTo((BlockWorld.Center(b.Key) - player).sqrMagnitude));
             var keep = new HashSet<Vector3Int>();

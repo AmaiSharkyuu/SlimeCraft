@@ -12,54 +12,54 @@ namespace SlimeCraft
     /// Subnautica's resources are Minecraft ingredients too: titanium works as an iron ingot, gold as a gold ingot,
     /// a gas pod as gunpowder, a stalker tooth as a bone, Subnautica fish as cod or salmon... A lone Subnautica item
     /// in the grid turns into its Minecraft counterpart, and Subnautica's fabricators accept the Minecraft
-    /// counterparts in return (McToSn, used by SnBridge).
+    /// counterparts in return (McToSn, used by SrBridge).
     /// </summary>
     public static class Crafting
     {
-        public static readonly Dictionary<TechType, string> SnToMc = new Dictionary<TechType, string>
+        public static readonly Dictionary<Identifiable.Id, string> SnToMc = new Dictionary<Identifiable.Id, string>
         {
-            { TechType.Titanium, "iron_ingot" }, { TechType.TitaniumIngot, "iron_block" }, { TechType.Copper, "copper_ingot" },
-            { TechType.Gold, "gold_ingot" }, { TechType.Diamond, "diamond" }, { TechType.Quartz, "quartz" }, { TechType.Glass, "glass" },
-            { TechType.Kyanite, "lapis_lazuli" }, { TechType.PrecursorIonCrystal, "amethyst_shard" }, { TechType.Sulphur, "gunpowder" },
-            { TechType.GasPod, "gunpowder" }, { TechType.CrashPowder, "gunpowder" }, { TechType.StalkerTooth, "bone" },
-            { TechType.CreepvinePiece, "kelp" }, { TechType.CreepvineSeedCluster, "glow_berries" },
-            { TechType.AcidMushroom, "red_mushroom" }, { TechType.WhiteMushroom, "brown_mushroom" }, { TechType.CoralChunk, "brain_coral" },
-            { TechType.JellyPlant, "sea_pickle" }, { TechType.Melon, "melon_slice" }, { TechType.SmallMelon, "melon_slice" },
-            { TechType.BulboTreePiece, "apple" }, { TechType.PurpleVegetable, "beetroot" }, { TechType.HangingFruit, "sweet_berries" },
-            { TechType.KooshChunk, "sponge" }, { TechType.FiberMesh, "string" }, { TechType.Salt, "sugar" }, { TechType.Silicone, "slime_ball" },
-            { TechType.Peeper, "tropical_fish" }, { TechType.Bladderfish, "pufferfish" }, { TechType.Boomerang, "cod" }, { TechType.Eyeye, "salmon" },
-            { TechType.GarryFish, "cod" }, { TechType.HoleFish, "salmon" }, { TechType.Hoopfish, "tropical_fish" }, { TechType.Hoverfish, "cod" },
-            { TechType.Oculus, "salmon" }, { TechType.Reginald, "cod" }, { TechType.Spadefish, "salmon" }, { TechType.Spinefish, "cod" },
-            { TechType.LavaBoomerang, "cod" }, { TechType.LavaEyeye, "salmon" },
-            { TechType.CookedBoomerang, "cooked_cod" }, { TechType.CookedGarryFish, "cooked_cod" }, { TechType.CookedHoverfish, "cooked_cod" },
-            { TechType.CookedReginald, "cooked_cod" }, { TechType.CookedSpinefish, "cooked_cod" }, { TechType.CookedLavaBoomerang, "cooked_cod" },
-            { TechType.CookedEyeye, "cooked_salmon" }, { TechType.CookedHoleFish, "cooked_salmon" }, { TechType.CookedOculus, "cooked_salmon" },
-            { TechType.CookedSpadefish, "cooked_salmon" }, { TechType.CookedLavaEyeye, "cooked_salmon" }, { TechType.CookedPeeper, "cooked_cod" },
-            { TechType.CookedHoopfish, "cooked_cod" }, { TechType.CookedBladderfish, "cooked_cod" },
+            { Identifiable.Id.Titanium, "iron_ingot" }, { Identifiable.Id.TitaniumIngot, "iron_block" }, { Identifiable.Id.Copper, "copper_ingot" },
+            { Identifiable.Id.Gold, "gold_ingot" }, { Identifiable.Id.Diamond, "diamond" }, { Identifiable.Id.Quartz, "quartz" }, { Identifiable.Id.Glass, "glass" },
+            { Identifiable.Id.Kyanite, "lapis_lazuli" }, { Identifiable.Id.PrecursorIonCrystal, "amethyst_shard" }, { Identifiable.Id.Sulphur, "gunpowder" },
+            { Identifiable.Id.GasPod, "gunpowder" }, { Identifiable.Id.CrashPowder, "gunpowder" }, { Identifiable.Id.StalkerTooth, "bone" },
+            { Identifiable.Id.CreepvinePiece, "kelp" }, { Identifiable.Id.CreepvineSeedCluster, "glow_berries" },
+            { Identifiable.Id.AcidMushroom, "red_mushroom" }, { Identifiable.Id.WhiteMushroom, "brown_mushroom" }, { Identifiable.Id.CoralChunk, "brain_coral" },
+            { Identifiable.Id.JellyPlant, "sea_pickle" }, { Identifiable.Id.Melon, "melon_slice" }, { Identifiable.Id.SmallMelon, "melon_slice" },
+            { Identifiable.Id.BulboTreePiece, "apple" }, { Identifiable.Id.PurpleVegetable, "beetroot" }, { Identifiable.Id.HangingFruit, "sweet_berries" },
+            { Identifiable.Id.KooshChunk, "sponge" }, { Identifiable.Id.FiberMesh, "string" }, { Identifiable.Id.Salt, "sugar" }, { Identifiable.Id.Silicone, "slime_ball" },
+            { Identifiable.Id.Peeper, "tropical_fish" }, { Identifiable.Id.Bladderfish, "pufferfish" }, { Identifiable.Id.Boomerang, "cod" }, { Identifiable.Id.Eyeye, "salmon" },
+            { Identifiable.Id.GarryFish, "cod" }, { Identifiable.Id.HoleFish, "salmon" }, { Identifiable.Id.Hoopfish, "tropical_fish" }, { Identifiable.Id.Hoverfish, "cod" },
+            { Identifiable.Id.Oculus, "salmon" }, { Identifiable.Id.Reginald, "cod" }, { Identifiable.Id.Spadefish, "salmon" }, { Identifiable.Id.Spinefish, "cod" },
+            { Identifiable.Id.LavaBoomerang, "cod" }, { Identifiable.Id.LavaEyeye, "salmon" },
+            { Identifiable.Id.CookedBoomerang, "cooked_cod" }, { Identifiable.Id.CookedGarryFish, "cooked_cod" }, { Identifiable.Id.CookedHoverfish, "cooked_cod" },
+            { Identifiable.Id.CookedReginald, "cooked_cod" }, { Identifiable.Id.CookedSpinefish, "cooked_cod" }, { Identifiable.Id.CookedLavaBoomerang, "cooked_cod" },
+            { Identifiable.Id.CookedEyeye, "cooked_salmon" }, { Identifiable.Id.CookedHoleFish, "cooked_salmon" }, { Identifiable.Id.CookedOculus, "cooked_salmon" },
+            { Identifiable.Id.CookedSpadefish, "cooked_salmon" }, { Identifiable.Id.CookedLavaEyeye, "cooked_salmon" }, { Identifiable.Id.CookedPeeper, "cooked_cod" },
+            { Identifiable.Id.CookedHoopfish, "cooked_cod" }, { Identifiable.Id.CookedBladderfish, "cooked_cod" },
         };
 
         /// <summary>Minecraft item -> the Subnautica ingredient it can stand in for in fabricators and the habitat builder.</summary>
-        public static readonly Dictionary<string, TechType> McToSn = new Dictionary<string, TechType>
+        public static readonly Dictionary<string, Identifiable.Id> McToSn = new Dictionary<string, Identifiable.Id>
         {
-            { "iron_ingot", TechType.Titanium }, { "copper_ingot", TechType.Copper }, { "gold_ingot", TechType.Gold }, { "diamond", TechType.Diamond },
-            { "quartz", TechType.Quartz }, { "glass", TechType.Glass }, { "lapis_lazuli", TechType.Kyanite }, { "gunpowder", TechType.Sulphur },
-            { "bone", TechType.StalkerTooth }, { "kelp", TechType.CreepvinePiece }, { "string", TechType.FiberMesh },
-            { "amethyst_shard", TechType.PrecursorIonCrystal }, { "sugar", TechType.Salt },
+            { "iron_ingot", Identifiable.Id.Titanium }, { "copper_ingot", Identifiable.Id.Copper }, { "gold_ingot", Identifiable.Id.Gold }, { "diamond", Identifiable.Id.Diamond },
+            { "quartz", Identifiable.Id.Quartz }, { "glass", Identifiable.Id.Glass }, { "lapis_lazuli", Identifiable.Id.Kyanite }, { "gunpowder", Identifiable.Id.Sulphur },
+            { "bone", Identifiable.Id.StalkerTooth }, { "kelp", Identifiable.Id.CreepvinePiece }, { "string", Identifiable.Id.FiberMesh },
+            { "amethyst_shard", Identifiable.Id.PrecursorIonCrystal }, { "sugar", Identifiable.Id.Salt },
         };
 
         /// <summary>Subnautica raw fish -> Subnautica cooked fish in furnaces, smokers and campfires.</summary>
-        private static TechType CookSn(TechType t)
+        private static Identifiable.Id CookSn(Identifiable.Id t)
         {
             var s = t.ToString();
             if (TechTypeExtensions.FromString("Cooked" + s, out var cooked, true)) return cooked;
-            return TechType.None;
+            return Identifiable.Id.NONE;
         }
 
         public static bool Matches(ItemStack s, string[] options)
         {
             if (options == null || options.Length == 0) return s == null;
             if (s == null) return false;
-            string id = s.IsMc ? s.Item.Id : SnToMc.TryGetValue(s.Tech, out var m) ? m : null;
+            string id = s.IsMc ? s.Item.Id : SnToMc.TryGetValue(s.Actor, out var m) ? m : null;
             if (id == null) return false;
             foreach (var o in options) if (o == id) return true;
             return false;
@@ -91,7 +91,7 @@ namespace SlimeCraft
             // iron ingot rather than iron nuggets)
             if (filled == 1)
                 foreach (var s0 in grid)
-                    if (s0 != null && s0.IsSn && SnToMc.TryGetValue(s0.Tech, out var mc0) && McData.Item(mc0) != null)
+                    if (s0 != null && s0.IsSr && SnToMc.TryGetValue(s0.Actor, out var mc0) && McData.Item(mc0) != null)
                         return new Result { Output = ItemStack.Of(mc0), Special = true };
             int bw = maxX - minX + 1, bh = maxY - minY + 1;
 
@@ -273,10 +273,10 @@ namespace SlimeCraft
         {
             recipe = null;
             if (input == null) return null;
-            if (input.IsSn && (type == "smelting" || type == "smoking" || type == "campfire_cooking"))
+            if (input.IsSr && (type == "smelting" || type == "smoking" || type == "campfire_cooking"))
             {
-                var c = CookSn(input.Tech);
-                if (c != TechType.None) { recipe = new Recipe { Type = type, Time = type == "smelting" ? 200 : type == "smoking" ? 100 : 600, Xp = 0.35f }; return new ItemStack(c, 1); }
+                var c = CookSn(input.Actor);
+                if (c != Identifiable.Id.NONE) { recipe = new Recipe { Type = type, Time = type == "smelting" ? 200 : type == "smoking" ? 100 : 600, Xp = 0.35f }; return new ItemStack(c, 1); }
             }
             foreach (var r in McData.Recipes)
             {
@@ -291,12 +291,12 @@ namespace SlimeCraft
             if (s == null) return 0;
             if (s.IsMc) return McData.Fuel.TryGetValue(s.Item.Id, out var t) ? t : 0;
             // Subnautica fuels: biological matter burns like Minecraft's
-            switch (s.Tech)
+            switch (s.Actor)
             {
-                case TechType.CreepvinePiece: return 200;
-                case TechType.SeaTreaderPoop: return 1600;
-                case TechType.BloodOil: case TechType.Lubricant: case TechType.Benzene: return 6400;
-                case TechType.CrashPowder: case TechType.Sulphur: return 1600;
+                case Identifiable.Id.CreepvinePiece: return 200;
+                case Identifiable.Id.SeaTreaderPoop: return 1600;
+                case Identifiable.Id.BloodOil: case Identifiable.Id.Lubricant: case Identifiable.Id.Benzene: return 6400;
+                case Identifiable.Id.CrashPowder: case Identifiable.Id.Sulphur: return 1600;
             }
             return 0;
         }

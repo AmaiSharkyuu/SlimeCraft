@@ -166,7 +166,7 @@ namespace SlimeCraft
         public MPart this[string name] => Root.Find(name);
     }
 
-    /// <summary>Minecraft's model definitions (getTexturedModelData) that SubnautiCraft draws, ported from the decompiled code.</summary>
+    /// <summary>Minecraft's model definitions (getTexturedModelData) that SlimeCraft draws, ported from the decompiled code.</summary>
     public static class Models
     {
         /// <summary>PlayerEntityModel(slim) with its outer layers (hat, jacket, sleeves, pants).</summary>
