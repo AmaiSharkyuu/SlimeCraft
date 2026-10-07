@@ -9,57 +9,43 @@ namespace SlimeCraft
     /// dyeing leather, tipped arrows, shulker box colouring), furnace / blast furnace / smoker / campfire cooking,
     /// the stonecutter and the smithing table.
     ///
-    /// Subnautica's resources are Minecraft ingredients too: titanium works as an iron ingot, gold as a gold ingot,
-    /// a gas pod as gunpowder, a stalker tooth as a bone, Subnautica fish as cod or salmon... A lone Subnautica item
-    /// in the grid turns into its Minecraft counterpart, and Subnautica's fabricators accept the Minecraft
-    /// counterparts in return (McToSn, used by SrBridge).
+    /// Slime Rancher's things are Minecraft ingredients too: plorts stand for the Minecraft material they look like
+    /// (a boom plort is gunpowder, a fire plort blaze powder, a quantum plort an ender pearl, a gold plort a gold
+    /// ingot...), fruits and veggies for Minecraft's crops, and hens for raw chicken (cooked in a furnace).
     /// </summary>
     public static class Crafting
     {
-        public static readonly Dictionary<Identifiable.Id, string> SnToMc = new Dictionary<Identifiable.Id, string>
+        public static readonly Dictionary<Identifiable.Id, string> SrToMc = new Dictionary<Identifiable.Id, string>
         {
-            { Identifiable.Id.Titanium, "iron_ingot" }, { Identifiable.Id.TitaniumIngot, "iron_block" }, { Identifiable.Id.Copper, "copper_ingot" },
-            { Identifiable.Id.Gold, "gold_ingot" }, { Identifiable.Id.Diamond, "diamond" }, { Identifiable.Id.Quartz, "quartz" }, { Identifiable.Id.Glass, "glass" },
-            { Identifiable.Id.Kyanite, "lapis_lazuli" }, { Identifiable.Id.PrecursorIonCrystal, "amethyst_shard" }, { Identifiable.Id.Sulphur, "gunpowder" },
-            { Identifiable.Id.GasPod, "gunpowder" }, { Identifiable.Id.CrashPowder, "gunpowder" }, { Identifiable.Id.StalkerTooth, "bone" },
-            { Identifiable.Id.CreepvinePiece, "kelp" }, { Identifiable.Id.CreepvineSeedCluster, "glow_berries" },
-            { Identifiable.Id.AcidMushroom, "red_mushroom" }, { Identifiable.Id.WhiteMushroom, "brown_mushroom" }, { Identifiable.Id.CoralChunk, "brain_coral" },
-            { Identifiable.Id.JellyPlant, "sea_pickle" }, { Identifiable.Id.Melon, "melon_slice" }, { Identifiable.Id.SmallMelon, "melon_slice" },
-            { Identifiable.Id.BulboTreePiece, "apple" }, { Identifiable.Id.PurpleVegetable, "beetroot" }, { Identifiable.Id.HangingFruit, "sweet_berries" },
-            { Identifiable.Id.KooshChunk, "sponge" }, { Identifiable.Id.FiberMesh, "string" }, { Identifiable.Id.Salt, "sugar" }, { Identifiable.Id.Silicone, "slime_ball" },
-            { Identifiable.Id.Peeper, "tropical_fish" }, { Identifiable.Id.Bladderfish, "pufferfish" }, { Identifiable.Id.Boomerang, "cod" }, { Identifiable.Id.Eyeye, "salmon" },
-            { Identifiable.Id.GarryFish, "cod" }, { Identifiable.Id.HoleFish, "salmon" }, { Identifiable.Id.Hoopfish, "tropical_fish" }, { Identifiable.Id.Hoverfish, "cod" },
-            { Identifiable.Id.Oculus, "salmon" }, { Identifiable.Id.Reginald, "cod" }, { Identifiable.Id.Spadefish, "salmon" }, { Identifiable.Id.Spinefish, "cod" },
-            { Identifiable.Id.LavaBoomerang, "cod" }, { Identifiable.Id.LavaEyeye, "salmon" },
-            { Identifiable.Id.CookedBoomerang, "cooked_cod" }, { Identifiable.Id.CookedGarryFish, "cooked_cod" }, { Identifiable.Id.CookedHoverfish, "cooked_cod" },
-            { Identifiable.Id.CookedReginald, "cooked_cod" }, { Identifiable.Id.CookedSpinefish, "cooked_cod" }, { Identifiable.Id.CookedLavaBoomerang, "cooked_cod" },
-            { Identifiable.Id.CookedEyeye, "cooked_salmon" }, { Identifiable.Id.CookedHoleFish, "cooked_salmon" }, { Identifiable.Id.CookedOculus, "cooked_salmon" },
-            { Identifiable.Id.CookedSpadefish, "cooked_salmon" }, { Identifiable.Id.CookedLavaEyeye, "cooked_salmon" }, { Identifiable.Id.CookedPeeper, "cooked_cod" },
-            { Identifiable.Id.CookedHoopfish, "cooked_cod" }, { Identifiable.Id.CookedBladderfish, "cooked_cod" },
+            // plorts
+            { Identifiable.Id.PINK_PLORT, "pink_dye" }, { Identifiable.Id.ROCK_PLORT, "flint" }, { Identifiable.Id.TABBY_PLORT, "string" },
+            { Identifiable.Id.PHOSPHOR_PLORT, "glowstone_dust" }, { Identifiable.Id.RAD_PLORT, "redstone" }, { Identifiable.Id.BOOM_PLORT, "gunpowder" },
+            { Identifiable.Id.HONEY_PLORT, "honeycomb" }, { Identifiable.Id.HUNTER_PLORT, "leather" }, { Identifiable.Id.CRYSTAL_PLORT, "amethyst_shard" },
+            { Identifiable.Id.QUANTUM_PLORT, "ender_pearl" }, { Identifiable.Id.DERVISH_PLORT, "feather" }, { Identifiable.Id.MOSAIC_PLORT, "prismarine_crystals" },
+            { Identifiable.Id.TANGLE_PLORT, "slime_ball" }, { Identifiable.Id.FIRE_PLORT, "blaze_powder" }, { Identifiable.Id.SABER_PLORT, "bone" },
+            { Identifiable.Id.PUDDLE_PLORT, "prismarine_shard" }, { Identifiable.Id.GOLD_PLORT, "gold_ingot" }, { Identifiable.Id.QUICKSILVER_PLORT, "iron_ingot" },
+            // fruits and veggies
+            { Identifiable.Id.POGO_FRUIT, "apple" }, { Identifiable.Id.CUBERRY_FRUIT, "sweet_berries" }, { Identifiable.Id.MANGO_FRUIT, "apple" },
+            { Identifiable.Id.LEMON_FRUIT, "apple" }, { Identifiable.Id.PEAR_FRUIT, "apple" }, { Identifiable.Id.KOOKADOBA_FRUIT, "glow_berries" },
+            { Identifiable.Id.CARROT_VEGGIE, "carrot" }, { Identifiable.Id.BEET_VEGGIE, "beetroot" }, { Identifiable.Id.PARSNIP_VEGGIE, "potato" },
+            { Identifiable.Id.OCAOCA_VEGGIE, "potato" }, { Identifiable.Id.ONION_VEGGIE, "beetroot" }, { Identifiable.Id.GINGER_VEGGIE, "carrot" },
+            // meat
+            { Identifiable.Id.HEN, "chicken" }, { Identifiable.Id.ROOSTER, "chicken" }, { Identifiable.Id.BRIAR_HEN, "chicken" },
+            { Identifiable.Id.STONY_HEN, "chicken" }, { Identifiable.Id.PAINTED_HEN, "chicken" }, { Identifiable.Id.ELDER_HEN, "chicken" },
+            { Identifiable.Id.ELDER_ROOSTER, "chicken" }, { Identifiable.Id.CHICK, "egg" },
         };
 
-        /// <summary>Minecraft item -> the Subnautica ingredient it can stand in for in fabricators and the habitat builder.</summary>
-        public static readonly Dictionary<string, Identifiable.Id> McToSn = new Dictionary<string, Identifiable.Id>
-        {
-            { "iron_ingot", Identifiable.Id.Titanium }, { "copper_ingot", Identifiable.Id.Copper }, { "gold_ingot", Identifiable.Id.Gold }, { "diamond", Identifiable.Id.Diamond },
-            { "quartz", Identifiable.Id.Quartz }, { "glass", Identifiable.Id.Glass }, { "lapis_lazuli", Identifiable.Id.Kyanite }, { "gunpowder", Identifiable.Id.Sulphur },
-            { "bone", Identifiable.Id.StalkerTooth }, { "kelp", Identifiable.Id.CreepvinePiece }, { "string", Identifiable.Id.FiberMesh },
-            { "amethyst_shard", Identifiable.Id.PrecursorIonCrystal }, { "sugar", Identifiable.Id.Salt },
-        };
+        /// <summary>Nothing goes the other way: Slime Rancher has no crafting of its own that would take Minecraft items.</summary>
+        public static readonly Dictionary<string, Identifiable.Id> McToSn = new Dictionary<string, Identifiable.Id>();
 
-        /// <summary>Subnautica raw fish -> Subnautica cooked fish in furnaces, smokers and campfires.</summary>
-        private static Identifiable.Id CookSn(Identifiable.Id t)
-        {
-            var s = t.ToString();
-            if (TechTypeExtensions.FromString("Cooked" + s, out var cooked, true)) return cooked;
-            return Identifiable.Id.NONE;
-        }
+        /// <summary>Slime Rancher things do not cook into Slime Rancher things; a hen in a furnace gives Minecraft's cooked chicken.</summary>
+        private static Identifiable.Id CookSn(Identifiable.Id t) => Identifiable.Id.NONE;
 
         public static bool Matches(ItemStack s, string[] options)
         {
             if (options == null || options.Length == 0) return s == null;
             if (s == null) return false;
-            string id = s.IsMc ? s.Item.Id : SnToMc.TryGetValue(s.Actor, out var m) ? m : null;
+            string id = s.IsMc ? s.Item.Id : SrToMc.TryGetValue(s.Actor, out var m) ? m : null;
             if (id == null) return false;
             foreach (var o in options) if (o == id) return true;
             return false;
@@ -91,7 +77,7 @@ namespace SlimeCraft
             // iron ingot rather than iron nuggets)
             if (filled == 1)
                 foreach (var s0 in grid)
-                    if (s0 != null && s0.IsSr && SnToMc.TryGetValue(s0.Actor, out var mc0) && McData.Item(mc0) != null)
+                    if (s0 != null && s0.IsSr && SrToMc.TryGetValue(s0.Actor, out var mc0) && McData.Item(mc0) != null)
                         return new Result { Output = ItemStack.Of(mc0), Special = true };
             int bw = maxX - minX + 1, bh = maxY - minY + 1;
 
@@ -290,15 +276,8 @@ namespace SlimeCraft
         {
             if (s == null) return 0;
             if (s.IsMc) return McData.Fuel.TryGetValue(s.Item.Id, out var t) ? t : 0;
-            // Subnautica fuels: biological matter burns like Minecraft's
-            switch (s.Actor)
-            {
-                case Identifiable.Id.CreepvinePiece: return 200;
-                case Identifiable.Id.SeaTreaderPoop: return 1600;
-                case Identifiable.Id.BloodOil: case Identifiable.Id.Lubricant: case Identifiable.Id.Benzene: return 6400;
-                case Identifiable.Id.CrashPowder: case Identifiable.Id.Sulphur: return 1600;
-            }
-            return 0;
+            // Slime Rancher fuel: a fire plort burns like a blaze rod
+            return s.Actor == Identifiable.Id.FIRE_PLORT ? 2400 : 0;
         }
 
         public static List<Recipe> Stonecutting(ItemStack input)

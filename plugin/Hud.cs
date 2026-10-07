@@ -58,7 +58,7 @@ namespace SlimeCraft
             if (View.I != null)
             {
                 float f = View.I.Cooldown(0f);
-                bool full = f >= 1f && Interaction.Current.Mob != null || f >= 1f && Interaction.Current.Live != null;
+                bool full = f >= 1f && Interaction.Current.Mob != null || f >= 1f && Interaction.Current.Actor != null;
                 int x = w / 2 - 8, y = h / 2 - 7 + 16;
                 if (full) McGui.Blit(Icons, x, y, 68, 94, 16, 16);
                 else if (f < 1f)
@@ -102,7 +102,6 @@ namespace SlimeCraft
             int u = 16;
             if (Effects.Has("poison")) u += 36; else if (Effects.Has("wither")) u += 72;
             bool hardcore = false;
-            try { GameModeUtils.GetGameMode(out var mode, out _); hardcore = (mode & GameModeOption.Permadeath) != 0; } catch { }
             int v = hardcore ? 45 : 0;
             int maxHearts = Mathf.CeilToInt(maxHp / 2f);
             for (int i = hearts - 1; i >= 0; i--)
@@ -147,32 +146,14 @@ namespace SlimeCraft
                 else if (i * 2 + 1 == food) McGui.Blit(icons, fx, fy, uu + 9, 27, 9, 9);
             }
             int rightY = h - 49;
-            // air: Subnautica's oxygen as Minecraft's bubbles (shown underwater or while refilling)
-            var p = Player.main;
-            if (p != null)
+            // air: Minecraft's bubbles, shown underwater or while refilling
+            if (Motor.Submerged || Health.Air < 300)
             {
-                float cap = p.GetOxygenCapacity(), avail = p.GetOxygenAvailable();
-                if (cap > 0 && (Motor.Submerged || avail < cap - 0.5f))
-                {
-                    int air = Mathf.CeilToInt(avail / cap * 300f);
-                    int full = Mathf.CeilToInt((air - 2) * 10f / 300f), partial = Mathf.CeilToInt(air * 10f / 300f) - full;
-                    for (int i = 0; i < full + partial; i++)
-                        McGui.Blit(icons, x1 - i * 8 - 9, rightY, i < full ? 16 : 25, 18, 9, 9);
-                    rightY -= 10;
-                }
-            }
-            // thirst: Subnautica's water as a row of water bottles (Minecraft has no thirst, so the potion icon stands in)
-            float water = Hunger.Water;
-            int drops = Mathf.CeilToInt(water / 5f);
-            var bottle = new ItemStack(McData.Item("potion")) { Potion = "water" };
-            var tex = ItemRender.Icon(ItemStack.Of("glass_bottle"), out var uvEmpty);
-            var texFull = ItemRender.Icon(bottle, out var uvFull);
-            for (int i = 0; i < 10; i++)
-            {
-                int bx = x1 - i * 8 - 9;
-                if (water <= 10 && ticks % 10 == 0) bx += Random.Range(-1, 2);
-                bool fullDrop = i * 2 + 1 < drops, half = i * 2 + 1 == drops;
-                DrawTex(fullDrop || half ? texFull : tex, fullDrop || half ? uvFull : uvEmpty, bx, rightY, 9, 9, half ? 0.55f : 1f);
+                int air = Mathf.Max(0, Health.Air);
+                int full = Mathf.CeilToInt((air - 2) * 10f / 300f), partial = Mathf.CeilToInt(air * 10f / 300f) - full;
+                for (int i = 0; i < full + partial; i++)
+                    McGui.Blit(icons, x1 - i * 8 - 9, rightY, i < full ? 16 : 25, 18, 9, 9);
+                rightY -= 10;
             }
         }
 
@@ -294,9 +275,8 @@ namespace SlimeCraft
         public static void Draw(int w, int h)
         {
             if (Time.unscaledTime > fpsAt) { fps = 1f / Mathf.Max(0.0001f, Time.unscaledDeltaTime); fpsAt = Time.unscaledTime + 0.5f; }
-            var p = Player.main;
-            if (p == null) return;
-            var feet = p.transform.position - Vector3.up * Motor.EyeHeight;
+            if (SrWorld.Player == null) return;
+            var feet = SrWorld.Feet;
             var cam = Camera.main.transform;
             float mcYaw = Mathf.Repeat(cam.eulerAngles.y - 180f + 180f, 360f) - 180f;
             var facing = BlockRules.HorizontalFacing(BlockRules.McLook(cam.forward));
@@ -308,14 +288,13 @@ namespace SlimeCraft
                 string.Format(System.Globalization.CultureInfo.InvariantCulture, "XYZ: {0:F3} / {1:F5} / {2:F3}", feet.x, feet.y, -feet.z),
                 string.Format("Block: {0} {1} {2}", Mathf.FloorToInt(feet.x), Mathf.FloorToInt(feet.y), Mathf.FloorToInt(-feet.z)),
                 string.Format(System.Globalization.CultureInfo.InvariantCulture, "Facing: {0} ({1:F1} / {2:F1})", BlockWorld.Name(facing), mcYaw, cam.eulerAngles.x > 180 ? cam.eulerAngles.x - 360 : cam.eulerAngles.x),
-                "Biome: " + (LargeWorld.main != null ? LargeWorld.main.GetBiome(p.transform.position) : "?"),
-                string.Format(System.Globalization.CultureInfo.InvariantCulture, "Depth: {0:F1} m", -p.transform.position.y),
+                "Region: " + SRSingleton<SceneContext>.Instance.RegionRegistry.GetCurrentRegionSetId(),
                 "Blocks: " + BlockWorld.Blocks.Count + "  Mobs: " + Mobs.All.Count + "  Items: " + ItemEntity.All.Count,
             };
             var t = Interaction.Current;
             if (t.IsBlock) { var s = BlockWorld.Get(t.Cell); lines.Add(""); lines.Add("Targeted Block: " + t.Cell.x + ", " + t.Cell.y + ", " + (-t.Cell.z)); lines.Add("minecraft:" + s?.Block.Id); if (s != null) foreach (var kv in s.Props) lines.Add(kv.Key + ": " + kv.Value); }
             else if (t.Mob != null) { lines.Add(""); lines.Add("Targeted Entity: minecraft:" + t.Mob.Type); }
-            else if (t.SnObject != null) { lines.Add(""); lines.Add("Subnautica: " + CraftData.GetTechType(t.SnObject) + " (" + SrWorld.SurfaceAt(t.Hit) + ")"); }
+            else if (t.SrObject != null) { lines.Add(""); lines.Add("Slime Rancher: " + (t.Actor != null ? t.Actor.id.ToString() : t.SrObject.name) + " (" + SrWorld.SurfaceAt(t.Hit) + ")"); }
             int y = 2;
             foreach (var l in lines)
             {

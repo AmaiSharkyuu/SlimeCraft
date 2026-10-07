@@ -1,31 +1,80 @@
 """
-Builds plugin/assets from Ezio's own Minecraft 1.20.1 files, so the mod never ships Mojang's assets itself.
+Builds SlimeCraft's assets from the player's own Minecraft 1.20.1 files, so the mod never ships Mojang's assets.
+Built into SlimeCraft-Assets.exe for players; run with Python by modders.
 
 Inputs
-  * the client jar and the asset index from the Fabric Loom cache (textures, models, blockstates, sounds, fr_fr)
-  * dumper/run/mcdata.json, written by running Minecraft's own code (dumper/, `gradlew runServer`)
+  * the 1.20.1 client jar and asset index of the official launcher (%APPDATA%\.minecraft), or a Fabric Loom cache:
+    textures, models, blockstates, loot tables, sounds and every language file
+  * data/mcdata.json, written by running Minecraft's own code (the SubnautiCraft dumper): block states and shapes,
+    items, recipes, tags, enchantments, effects, potions, mob stats
+  * data/mclayers.json (render layers read from the decompiled client) and data/mobmodels.json (entity models)
 
-Output (plugin/assets)
-  textures/<block|item|entity|gui|...>/*.png    first frame of every texture (animations listed in mc.json)
-  mc.json                                        everything the plugin needs: blocks, items, models,
-                                                 blockstates, recipes, tags, loot, enchantments, effects,
-                                                 sound events, French names, tints and render layers
-  sounds/<path>.ogg                              the sound files referenced by the events we keep
-  font.txt, steve.png, amai.png
+Output (plugin/assets, or the "assets" folder next to the .exe)
+  textures/<block|item|entity|gui|...>/*.png    every texture (animations listed in mc.json)
+  mc.json                                        blocks, items, models, blockstates, recipes, tags, loot,
+                                                 enchantments, effects, sound events, English names, tints, layers
+  lang/<code>.json                               Minecraft's own texts in every language Slime Rancher offers
+  sounds/<path>.ogg, font.txt, steve.png, amai.png (Amai's skin, when it is on this PC), mobmodels.json
 """
 import io, json, os, re, shutil, sys, zipfile
 from PIL import Image
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+FROZEN = getattr(sys, "frozen", False)
+HERE = os.path.dirname(sys.executable) if FROZEN else os.path.dirname(os.path.abspath(__file__))
+BUNDLE = getattr(sys, "_MEIPASS", HERE)  # the .exe carries data/ inside
 HOME = os.path.expanduser("~")
-LOOM = os.path.join(HOME, ".gradle", "caches", "fabric-loom")
-JAR = os.path.join(LOOM, "1.20.1", "minecraft-client.jar")
-ASSETS = os.path.join(LOOM, "assets")
-INDEX = os.path.join(ASSETS, "indexes", "1.20.1-5.json")
-DATA = os.path.join(HERE, "..", "dumper", "run", "mcdata.json")
-DECOMP = os.path.join(HERE, "..", "decomp", "mc", "net", "minecraft")
+
+
+def _windows_is_french():
+    try:
+        import ctypes
+        return (ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF) == 0x0C
+    except Exception:
+        return False
+
+
+FR = _windows_is_french()
+
+
+def say(fr, en):
+    print(fr if FR else en)
+
+
+def find_minecraft():
+    mc = os.path.join(os.environ.get("APPDATA", HOME), ".minecraft")
+    loom = os.path.join(HOME, ".gradle", "caches", "fabric-loom")
+    for jar_path, index_path, assets in (
+            (os.path.join(mc, "versions", "1.20.1", "1.20.1.jar"), os.path.join(mc, "assets", "indexes", "5.json"), os.path.join(mc, "assets")),
+            (os.path.join(loom, "1.20.1", "minecraft-client.jar"), os.path.join(loom, "assets", "indexes", "1.20.1-5.json"), os.path.join(loom, "assets"))):
+        if os.path.isfile(jar_path) and os.path.isfile(index_path):
+            return jar_path, index_path, assets
+    return None
+
+
+found = find_minecraft()
+if found is None:
+    say("Minecraft 1.20.1 est introuvable sur ce PC.", "Minecraft 1.20.1 was not found on this PC.")
+    say("Ouvre le launcher Minecraft officiel, lance la version 1.20.1 une fois (jusqu'au menu), ferme-la, puis relance cet outil.",
+        "Open the official Minecraft launcher, play version 1.20.1 once (up to the title screen), close it, then run this tool again.")
+    if FROZEN:
+        input("Entree pour fermer..." if FR else "Press Enter to close...")
+    sys.exit(1)
+JAR, INDEX, ASSETS = found
+DATA_DIR = os.path.join(BUNDLE, "data") if FROZEN else os.path.join(HERE, "..", "data")
+DATA = os.path.join(DATA_DIR, "mcdata.json")
+LAYERS = os.path.join(DATA_DIR, "mclayers.json")
+MOBMODELS = os.path.join(DATA_DIR, "mobmodels.json")
+DECOMP = os.path.join(HERE, "..", "..", "SubnautiCraft", "decomp", "mc", "net", "minecraft")
 SKIN = os.path.join(HOME, "Documents", "Mods", "Skin Amai", "amai.png")
-OUT = os.path.join(HERE, "..", "plugin", "assets")
+if len(sys.argv) > 1:
+    OUT = sys.argv[1]
+elif FROZEN:
+    OUT = os.path.join(HERE, "assets")
+else:
+    OUT = os.path.join(HERE, "..", "plugin", "assets")
+LANGS = ["en_us", "de_de", "es_es", "fr_fr", "ru_ru", "sv_se", "zh_cn", "ja_jp", "pt_br", "ko_kr"]
+say("Minecraft : " + JAR, "Minecraft: " + JAR)
+say("Destination : " + os.path.abspath(OUT), "Destination: " + os.path.abspath(OUT))
 
 jar = zipfile.ZipFile(JAR)
 names = set(jar.namelist())
@@ -74,7 +123,10 @@ for n in sorted(names):
     img.save(b, "PNG")
     write("textures/" + rel, b.getvalue())
 
-shutil.copy(SKIN, os.path.join(OUT, "amai.png"))
+if os.path.isfile(SKIN):
+    shutil.copy(SKIN, os.path.join(OUT, "amai.png"))  # Amai's own skin (slim arms); everyone else plays Steve
+if os.path.isfile(MOBMODELS):
+    shutil.copy(MOBMODELS, os.path.join(OUT, "mobmodels.json"))
 write("steve.png", jar.read("assets/minecraft/textures/entity/player/wide/steve.png"))
 
 # ------------------------------------------------------------------------------------------------ font
@@ -213,34 +265,46 @@ for k in data["items"]:
     item_models[k] = {"model": "item/" + k, "overrides": ov}
 
 # ------------------------------------------------------------------------------------------------ names
-fr = json.loads(obj_bytes("lang/fr_fr.json").decode("utf-8"))
 en = jar_json("lang/en_us.json")
 
 
 def tr(key):
-    return fr.get(key) or en.get(key) or key
+    return en.get(key) or key
 
 
-lang_keys = {}
-for k, v in fr.items():
-    if k.startswith(("gameMode.", "container.", "itemGroup.", "key.", "menu.", "deathScreen.", "chat.", "commands.",
-                     "effect.", "enchantment.", "potion.", "item.minecraft.potion", "item.minecraft.splash_potion",
-                     "item.minecraft.lingering_potion", "item.minecraft.tipped_arrow", "death.", "gui.", "options.",
-                     "argument.", "attribute.", "multiplayer.player", "selectWorld.gameMode", "item.durability",
-                     "item.modifiers", "item.color", "book.", "advancements.", "subtitles.", "stat.", "mount.",
-                     "createWorld.", "debug.", "title.", "entity.minecraft.")):
-        lang_keys[k] = v
-for k, v in en.items():
-    if k not in lang_keys and k.startswith(("commands.", "chat.", "death.", "debug.")):
-        lang_keys[k] = v
+KEEP_PREFIX = ("gameMode.", "container.", "itemGroup.", "key.", "menu.", "deathScreen.", "chat.", "commands.",
+               "effect.", "enchantment.", "potion.", "item.minecraft.potion", "item.minecraft.splash_potion",
+               "item.minecraft.lingering_potion", "item.minecraft.tipped_arrow", "death.", "gui.", "options.",
+               "argument.", "attribute.", "multiplayer.player", "selectWorld.gameMode", "item.durability",
+               "item.modifiers", "item.color", "book.", "advancements.", "subtitles.", "stat.", "mount.",
+               "createWorld.", "debug.", "title.", "entity.minecraft.", "inventory.", "block.minecraft.", "item.minecraft.")
+lang_keys = {k: v for k, v in en.items() if k.startswith(KEEP_PREFIX)}
+# every language Slime Rancher offers, from Minecraft's own translations (missing keys fall back to English)
+for code in LANGS:
+    if code == "en_us":
+        texts = en
+    else:
+        try:
+            texts = json.loads(obj_bytes("lang/" + code + ".json").decode("utf-8"))
+        except KeyError:
+            continue
+    write("lang/" + code + ".json", json.dumps({k: v for k, v in texts.items() if k.startswith(KEEP_PREFIX)}, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
 # ------------------------------------------------------------------------------------------------ render layers and tints
 layers = {}
-src = open(os.path.join(DECOMP, "client", "render", "RenderLayers.java"), encoding="utf-8").read()
-var_layer = dict(re.findall(r"RenderLayer (renderLayer\d?) = RenderLayer\.get(\w+)\(\)", src))
-for var, blk in [(v, b) for b, v in re.findall(r"map\.put\(Blocks\.(\w+), (renderLayer\d?)\)", src)]:
-    kind = var_layer.get(var, "Solid").lower()
-    layers[blk.lower()] = "translucent" if kind in ("translucent", "tripwire") else "cutout"
+render_layers = os.path.join(DECOMP, "client", "render", "RenderLayers.java")
+if os.path.isfile(render_layers):
+    # modder's machine: read the render layers from the decompiled client and keep them for players
+    src = open(render_layers, encoding="utf-8").read()
+    var_layer = dict(re.findall(r"RenderLayer (renderLayer\d?) = RenderLayer\.get(\w+)\(\)", src))
+    for var, blk in [(v, b) for b, v in re.findall(r"map\.put\(Blocks\.(\w+), (renderLayer\d?)\)", src)]:
+        kind = var_layer.get(var, "Solid").lower()
+        layers[blk.lower()] = "translucent" if kind in ("translucent", "tripwire") else "cutout"
+    if not FROZEN:
+        with open(LAYERS, "w", encoding="utf-8") as f:
+            json.dump(layers, f, separators=(",", ":"))
+else:
+    layers = json.load(open(LAYERS, encoding="utf-8"))
 for b, o in data["blocks"].items():
     if o["class"] in ("LeavesBlock", "CherryLeavesBlock", "MangroveLeavesBlock"):
         layers[b] = "cutout"
@@ -329,3 +393,6 @@ mc = {
 write("mc.json", json.dumps(mc, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 print("models", len(models), "blockstates", len(blockstates), "items", len(item_models), "sound events", len(events),
       "sound files", len(files), "%.1f MB" % (total / 1e6), "animations", len(anim))
+say("Termine. Tu peux lancer Slime Rancher.", "Done. You can start Slime Rancher.")
+if FROZEN:
+    input("Entree pour fermer..." if FR else "Press Enter to close...")

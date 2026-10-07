@@ -91,6 +91,7 @@ namespace SlimeCraft
             Interaction.Reset();
             var name = SRSingleton<GameContext>.Instance.AutoSaveDirector.SavedGame.GetName();
             Persist.Load(string.IsNullOrEmpty(name) ? "default" : name);
+            Sounds.FindMixer(p);
             View.Create(p);
             if (View.I != null) View.I.Perspective = Persist.pendingPerspective;
             GameMode.Set(GameMode.Creative, false);

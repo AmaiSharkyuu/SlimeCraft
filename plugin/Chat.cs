@@ -298,8 +298,6 @@ namespace SlimeCraft
                     int n = a.Length > 3 ? int.Parse(a[3]) : 1;
                     var s = ParseItem(a[2], n);
                     if (s == null) { Chat.Add("§c" + McData.Tf("argument.item.id.invalid", a[2])); return; }
-                    if (s.IsSr && !SrBridge.IsVirtual(s.Actor)) SrBridge.GiveReal(s.Actor, n);
-                    else
                     {
                         int left = n;
                         while (left > 0) { var part = s.Copy(Mathf.Min(left, s.MaxStack)); left -= part.Count; int took = Inventory.Add(part); if (took < part.Count) ItemEntity.Spawn(part.Copy(part.Count - took), SrWorld.Eye, Vector3.zero, 0); }
@@ -351,21 +349,20 @@ namespace SlimeCraft
                 }
                 case "time":
                 {
-                    var dnc = DayNightCycle.main;
+                    // Minecraft day ticks: 0 = sunrise (06:00), 1000 ticks an hour; Slime Rancher's clock only runs forward
+                    var td = SRSingleton<SceneContext>.Instance.TimeDirector;
+                    float hourNow = td.CurrHour();
                     if (a.Length >= 2 && a[1] == "query")
                     {
-                        // Minecraft day ticks: 0 = sunrise (06:00); Subnautica's day scalar 0.25 = sunrise
-                        int t = Mathf.RoundToInt(Mathf.Repeat(dnc.GetDayScalar() - 0.25f, 1f) * 24000f);
+                        int t = Mathf.RoundToInt(Mathf.Repeat(hourNow - 6f, 24f) * 1000f);
                         Chat.Add(McData.Tf("commands.time.query", t));
                         return;
                     }
-                    if (a.Length < 3) { Usage("/time set <temps>"); return; }
+                    if (a.Length < 3) { Usage("/time set <time>"); return; }
                     int ticks;
                     switch (a[2]) { case "day": ticks = 1000; break; case "noon": ticks = 6000; break; case "night": ticks = 13000; break; case "midnight": ticks = 18000; break; default: ticks = int.Parse(a[2].TrimEnd('t')); break; }
-                    float target = Mathf.Repeat(ticks / 24000f + 0.25f, 1f);
-                    float now = dnc.GetDayScalar();
-                    float delta = a[1] == "add" ? ticks / 24000f : Mathf.Repeat(target - now, 1f);
-                    dnc.timePassedAsDouble += delta * 1200f;
+                    float hours = a[1] == "add" ? ticks / 1000f : Mathf.Repeat(ticks / 1000f + 6f - hourNow, 24f);
+                    td.FastForwardTo(td.HoursFromNow(hours));
                     Chat.Add(McData.Tf("commands.time.set", ticks));
                     return;
                 }
@@ -391,7 +388,7 @@ namespace SlimeCraft
                 {
                     int n = 0;
                     var filter = a.Length >= 3 ? ParseItem(a[2], 1) : null;
-                    for (int i = 0; i < 36; i++) if (Inventory.Main[i] != null && (filter == null || Inventory.Main[i].Id == filter.Id)) { n += Inventory.Main[i].Count; if (Inventory.Main[i].IsSr) SrBridge.Consume(Inventory.Main[i].Actor, Inventory.Main[i].Count); Inventory.Main[i] = null; }
+                    for (int i = 0; i < 36; i++) if (Inventory.Main[i] != null && (filter == null || Inventory.Main[i].Id == filter.Id)) { n += Inventory.Main[i].Count; Inventory.Main[i] = null; }
                     if (filter == null) { for (int i = 0; i < 4; i++) { if (Inventory.Armor[i] != null) n++; Inventory.Armor[i] = null; } if (Inventory.Offhand != null) n += Inventory.Offhand.Count; Inventory.Offhand = null; }
                     Chat.Add(McData.Tf("commands.clear.success.single", n, Chat.PlayerName));
                     return;
@@ -456,7 +453,7 @@ namespace SlimeCraft
                 {
                     if (a.Length < 3) { Usage("/gamerule <règle> <valeur>"); return; }
                     bool v = a[2] == "true";
-                    switch (a[1]) { case "keepInventory": KeepInventory = v; break; case "doMobSpawning": MobSpawning = v; Mobs.Spawning = v; break; case "doDaylightCycle": DaylightCycle = v; if (v) DayNightCycle.main.Resume(); else DayNightCycle.main.Pause(); break; case "naturalRegeneration": NaturalRegen = v; break; }
+                    switch (a[1]) { case "keepInventory": KeepInventory = v; break; case "doMobSpawning": MobSpawning = v; Mobs.Spawning = v; break; case "doDaylightCycle": DaylightCycle = v; break; case "naturalRegeneration": NaturalRegen = v; break; }
                     Persist.Dirty = true;
                     Chat.Add(McData.Tf("commands.gamerule.set", a[1], a[2]));
                     return;
@@ -483,14 +480,8 @@ namespace SlimeCraft
                 case "help":
                     Chat.Add("§e--- " + McData.T("commands.help.header", "Aide") + " ---");
                     foreach (var n in Names) Chat.Add("/" + n);
-                    Chat.Add("§7(Les autres commandes vont à la console de Subnautica : item, spawn, warp, fastbuild...)");
-                    return;
-                case "sn":
-                    DevConsole.SendConsoleCommand(string.Join(" ", a.Skip(1)));
                     return;
             }
-            // not Minecraft's: Subnautica's console
-            if (DevConsole.SendConsoleCommand(line)) return;
             Chat.Add("§c" + McData.T("command.unknown.command", "Commande inconnue ou incomplète, voir l'erreur ci-dessous"));
             Chat.Add("§c§n" + line + "§r§c§o<--[ICI]");
         }

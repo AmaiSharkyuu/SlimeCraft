@@ -137,7 +137,7 @@ namespace SlimeCraft
                 if (tex != null) tex.name = "sn:" + t;
             }
             // Subnautica loads its sprite atlases asynchronously: only remember a result once there is one
-            if (tex != null || SpriteManager.hasInitialized) snTextures[t] = tex;
+            snTextures[t] = tex;
             return tex;
         }
 
@@ -160,7 +160,7 @@ namespace SlimeCraft
                 try { tex = RasterSprite(sp, 128, false); tex.filterMode = FilterMode.Bilinear; tex.name = "sn icon:" + t; }
                 catch (System.Exception e) { Plugin.Log.LogWarning("icon " + t + ": " + e.Message); }
             }
-            if (tex != null || SpriteManager.hasInitialized) snIcons[t] = tex;
+            snIcons[t] = tex;
             return tex;
         }
 

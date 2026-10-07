@@ -61,6 +61,16 @@ namespace SlimeCraft
             }
         }
 
+        /// <summary>Slime Rancher's sound-effects mixer group, so its volume slider treats Minecraft sounds like its own.</summary>
+        public static UnityEngine.Audio.AudioMixerGroup Mixer;
+
+        public static void FindMixer(GameObject player)
+        {
+            if (Mixer != null || player == null) return;
+            foreach (var src in player.GetComponentsInChildren<AudioSource>(true))
+                if (src.outputAudioMixerGroup != null) { Mixer = src.outputAudioMixerGroup; break; }
+        }
+
         private static AudioSource Source()
         {
             if (host == null)
@@ -74,6 +84,7 @@ namespace SlimeCraft
             var a = new GameObject("snd").AddComponent<AudioSource>();
             a.transform.SetParent(host.transform);
             a.playOnAwake = false;
+            a.outputAudioMixerGroup = Mixer;
             pool.Add(a);
             return a;
         }
@@ -126,9 +137,8 @@ namespace SlimeCraft
             if (clip == null) return;
             var a = Source();
             a.clip = clip;
-            float master = 1f;
-            try { master = SoundSystem.GetMasterVolume(); } catch { }
-            a.volume = Mathf.Clamp01(volume) * master;
+            if (a.outputAudioMixerGroup == null) a.outputAudioMixerGroup = Mixer;
+            a.volume = Mathf.Clamp01(volume);
             a.pitch = pitch;
             if (at.HasValue)
             {

@@ -216,15 +216,15 @@ namespace SlimeCraft
     /// <summary>Teleports used by chorus fruit and ender pearls.</summary>
     public static class Teleport
     {
-        public static void Random(Player p, float range)
+        public static void Random(float range)
         {
             for (int i = 0; i < 16; i++)
             {
-                var feet = p.transform.position - Vector3.up * Motor.EyeHeight;
+                var feet = SrWorld.Feet;
                 var to = feet + new Vector3(UnityEngine.Random.Range(-range, range), UnityEngine.Random.Range(-range, range), UnityEngine.Random.Range(-range, range));
                 if (Physics.CheckCapsule(to + Vector3.up * 0.31f, to + Vector3.up * 1.49f, 0.3f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore)) continue;
                 if (!Physics.Raycast(to + Vector3.up * 0.1f, Vector3.down, 3f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) && !SrWorld.IsWater(to)) continue;
-                p.SetPosition(to + Vector3.up * Motor.EyeHeight);
+                SrWorld.Teleport(to);
                 Sounds.Play("item.chorus_fruit.teleport", to);
                 return;
             }
@@ -281,7 +281,7 @@ namespace SlimeCraft
             if (water)
             {
                 vel *= 0.9f;
-                vel.y += (SrWorld.WaterLevelAt(transform.position) - p.y > 0.2f ? 0.04f : 0f) - 0.01f;
+                vel.y += (SrWorld.WaterLevelAt(p) - p.y > 0.2f ? 0.04f : 0f) - 0.01f;
                 if (wait > 0) wait--;
                 else if (biteTicks == 0) { biteTicks = Random.Range(20, 40); Sounds.Play("entity.fishing_bobber.splash", p, 0.25f); Particles.Bubble(p); vel.y -= 0.2f; }
                 else if (--biteTicks == 0) wait = Random.Range(100, 600) - rod.Level("lure") * 100;
@@ -303,10 +303,10 @@ namespace SlimeCraft
             if (biteTicks > 0 && SrWorld.IsWater(at))
             {
                 ItemStack catchStack;
-                if (Random.value < 0.5f)
+                if (Random.value < 0.08f)
                 {
-                    Identifiable.Id[] fish = { Identifiable.Id.Peeper, Identifiable.Id.Bladderfish, Identifiable.Id.Boomerang, Identifiable.Id.GarryFish, Identifiable.Id.HoleFish, Identifiable.Id.Hoopfish, Identifiable.Id.Reginald, Identifiable.Id.Spadefish, Identifiable.Id.Eyeye };
-                    catchStack = new ItemStack(fish[Random.Range(0, fish.Length)], 1);
+                    // now and then a puddle plort, washed into Slime Rancher's ponds
+                    catchStack = new ItemStack(Identifiable.Id.PUDDLE_PLORT, 1);
                 }
                 else
                 {

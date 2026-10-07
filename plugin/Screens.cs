@@ -395,7 +395,7 @@ namespace SlimeCraft
             var c = s.NameColor;
             string code = c == Color.white ? "§f" : c.b > 0.9f && c.r < 0.5f ? "§b" : c.r > 0.9f && c.b > 0.9f ? "§d" : "§e";
             l.Add(code + s.Name);
-            if (s.IsSr) { l.Add("§9Subnautica"); if (Crafting.SnToMc.TryGetValue(s.Actor, out var mc)) l.Add("§7= " + McData.Item(mc)?.Name); return l; }
+            if (s.IsSr) { l.Add("§9Slime Rancher"); if (Crafting.SrToMc.TryGetValue(s.Actor, out var mc)) l.Add("§7= " + McData.Item(mc)?.Name); return l; }
             if (s.Enchanted)
                 foreach (var kv in s.Ench)
                 {
@@ -808,109 +808,6 @@ namespace SlimeCraft
                 McGui.Blit(tex, Left, Top + rows * 18 + 17, 0, 126, W, 96);
             }
             else base.DrawBackground(mx, my);
-        }
-    }
-
-    /// <summary>
-    /// A Subnautica locker, wall locker or any StorageContainer shown as a Minecraft chest: its items grouped by kind.
-    /// Putting a Subnautica item in moves (or spawns) the real object into the locker; taking one out brings it back
-    /// to the player like any pickup. Minecraft items stay out (Subnautica's lockers only hold Subnautica things).
-    /// </summary>
-    public class SnStorageScreen : McScreen
-    {
-        private readonly StorageContainer storage;
-        private readonly ItemStack[] view;
-        private readonly int rows;
-
-        public SnStorageScreen(StorageContainer sc)
-        {
-            storage = sc;
-            Title = Language.main.Get(sc.storageLabel);
-            int cells = sc.container.sizeX * sc.container.sizeY;
-            rows = Mathf.Clamp(Mathf.CeilToInt(cells / 9f), 1, 6);
-            view = new ItemStack[rows * 9];
-            Background = "gui/container/generic_54";
-            H = 114 + rows * 18;
-            for (int r = 0; r < rows; r++)
-                for (int c = 0; c < 9; c++)
-                {
-                    int k = r * 9 + c;
-                    Slots.Add(new Slot { X = 8 + c * 18, Y = 18 + r * 18, Get = () => view[k], Set = v => SetSlot(k, v), CanPlace = v => v.IsSr && storage.container.HasRoomFor(v.Actor) });
-                }
-            AddPlayerInventory(8, 18 + rows * 18 + 13);
-            Refresh();
-        }
-
-        private void Refresh()
-        {
-            for (int i = 0; i < view.Length; i++) view[i] = null;
-            int k = 0;
-            foreach (var t in storage.container.GetItemTypes())
-            {
-                int n = storage.container.GetCount(t);
-                while (n > 0 && k < view.Length)
-                {
-                    int m = Mathf.Min(n, SrItems.MaxStack(t));
-                    view[k++] = new ItemStack(t, m);
-                    n -= m;
-                }
-            }
-        }
-
-        private void SetSlot(int k, ItemStack v)
-        {
-            var before = view[k];
-            int had = before != null ? before.Count : 0;
-            var tech = v != null ? v.Actor : before != null ? before.Actor : Identifiable.Id.NONE;
-            int now = v != null ? v.Count : 0;
-            int diff = now - (before != null && v != null && before.Actor == v.Actor ? had : 0);
-            if (before != null && (v == null || before.Actor != v.Actor))
-            {
-                // taken out: real objects come out of the locker into the player's possession
-                for (int i = 0; i < had; i++)
-                {
-                    var p = storage.container.RemoveItem(before.Actor);
-                    if (p == null) break;
-                    if (SrBridge.IsVirtual(before.Actor)) UnityEngine.Object.Destroy(p.gameObject);
-                    else { SrBridge.Suspend = true; global::Inventory.main.container.UnsafeAdd(new InventoryItem(p)); SrBridge.Suspend = false; }
-                }
-                diff = now;
-            }
-            if (v != null && diff > 0) Game.I.StartCoroutine(Store(v.Actor, diff));
-            else if (v != null && diff < 0)
-                for (int i = 0; i < -diff; i++) { var p = storage.container.RemoveItem(v.Actor); if (p != null) { if (SrBridge.IsVirtual(v.Actor)) UnityEngine.Object.Destroy(p.gameObject); else global::Inventory.main.container.UnsafeAdd(new InventoryItem(p)); } }
-            view[k] = v;
-        }
-
-        private System.Collections.IEnumerator Store(Identifiable.Id t, int n)
-        {
-            for (int i = 0; i < n; i++)
-            {
-                if (!SrBridge.IsVirtual(t))
-                {
-                    var p = global::Inventory.main.container.RemoveItem(t);
-                    if (p != null) { storage.container.AddItem(p); continue; }
-                }
-                var task = CraftData.GetPrefabForTechTypeAsync(t);
-                yield return task;
-                var prefab = task.GetResult();
-                if (prefab == null) yield break;
-                var go = UnityEngine.Object.Instantiate(prefab);
-                var pk = go.GetComponent<Pickupable>();
-                if (pk == null) { UnityEngine.Object.Destroy(go); yield break; }
-                pk.Pickup(false);
-                storage.container.AddItem(pk);
-            }
-        }
-
-        public override void OnOpen() { Sounds.Play("block.chest.open", storage.transform.position, 0.5f); }
-        public override void OnClose() { Sounds.Play("block.chest.close", storage.transform.position, 0.5f); }
-
-        protected override void DrawBackground(float mx, float my)
-        {
-            var tex = McTex.Get(Background);
-            McGui.Blit(tex, Left, Top, 0, 0, W, rows * 18 + 17);
-            McGui.Blit(tex, Left, Top + rows * 18 + 17, 0, 126, W, 96);
         }
     }
 }

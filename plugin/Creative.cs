@@ -49,7 +49,7 @@ namespace SlimeCraft
             var food = T("food", McData.T("itemGroup.foodAndDrink"), "golden_apple", false, 2);
             var ingredients = T("ingredients", McData.T("itemGroup.ingredients"), "iron_ingot", false, 3);
             var eggs = T("eggs", McData.T("itemGroup.spawnEggs"), "cod_spawn_egg", false, 4);
-            var sn = new Tab { Key = "subnautica", Name = "Subnautica", Icon = new ItemStack(Identifiable.Id.Seaglide), Items = new List<ItemStack>(), Top = false, Column = 5 };
+            var sn = new Tab { Key = "slimerancher", Name = "Slime Rancher", Icon = new ItemStack(Identifiable.Id.PINK_SLIME), Items = new List<ItemStack>(), Top = false, Column = 5 };
             tabs.Add(sn);
             var inv = T("inventory", McData.T("itemGroup.inventory"), "chest", false, 6);
 
@@ -88,19 +88,21 @@ namespace SlimeCraft
                 else if (d.Class.Contains("Spawn")) eggs.Items.Add(s);
                 else ingredients.Items.Add(s);
             }
-            // Subnautica: every item that has an inventory icon
-            var seen = new HashSet<string>();
+            // Slime Rancher: every slime, largo, plort, food, chicken and toy the vacpack could hold, slimes first
+            var look = SRSingleton<GameContext>.Instance.LookupDirector;
+            var groups = new List<ItemStack>[5];
+            for (int g = 0; g < groups.Length; g++) groups[g] = new List<ItemStack>();
             foreach (Identifiable.Id t in System.Enum.GetValues(typeof(Identifiable.Id)))
             {
-                if (t == Identifiable.Id.NONE) continue;
-                var name = t.ToString();
-                if (!seen.Add(name)) continue;
-                Sprite sp = null;
-                try { sp = SpriteManager.Get(SpriteManager.Group.Item, t.AsString(), null); } catch { }
-                if (sp == null) continue;
-                if (name.EndsWith("Fragment") || name.EndsWith("Blueprint") || name.Contains("Precursor") && name.Contains("Key") && false) continue;
-                sn.Items.Add(new ItemStack(t, 1));
+                if (t == Identifiable.Id.NONE || Identifiable.IsGordo(t) || Identifiable.IsLiquid(t)) continue;
+                GameObject prefab = null; Sprite icon = null;
+                try { prefab = look.GetPrefab(t); icon = look.GetIcon(t); } catch { }
+                if (prefab == null || icon == null || prefab.GetComponent<Vacuumable>() == null) continue;
+                if (icon.name.ToLowerInvariant().Contains("needed")) continue; // Slime Rancher's "IMAGE NEEDED" placeholder
+                int g2 = Identifiable.IsLargo(t) ? 1 : Identifiable.IsSlime(t) ? 0 : Identifiable.IsPlort(t) ? 2 : Identifiable.IsFood(t) || Identifiable.IsAnimal(t) ? 3 : 4;
+                groups[g2].Add(new ItemStack(t, 1));
             }
+            foreach (var g in groups) sn.Items.AddRange(g);
             search.Items = new List<ItemStack>();
             foreach (var t in tabs) if (t != search && t != inv) search.Items.AddRange(t.Items);
         }
@@ -168,7 +170,6 @@ namespace SlimeCraft
             if (Inventory.Cursor != null) { Inventory.Cursor = null; return; } // dropping on the item list deletes
             if (st == null) return;
             var give = st.Copy(button == 2 ? st.MaxStack : 1);
-            if (give.IsSr && !SrBridge.IsVirtual(give.Actor)) { SrBridge.GiveReal(give.Actor, 1); return; }
             Inventory.Cursor = give;
         }
 
@@ -178,7 +179,6 @@ namespace SlimeCraft
             {
                 var st = from.Stack;
                 if (st == null) return;
-                if (st.IsSr && !SrBridge.IsVirtual(st.Actor)) { SrBridge.GiveReal(st.Actor, 1); return; }
                 Inventory.Add(st.Copy(st.MaxStack));
                 return;
             }

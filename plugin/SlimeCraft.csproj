@@ -17,11 +17,12 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
-    <!-- Slime Rancher has no JSON library of its own; this one ships next to SlimeCraft.dll. -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Slime Rancher has no JSON library of its own. Newtonsoft.Json 13 for .NET 2.0 (MIT) only needs mscorlib,
+         System, System.Xml and System.Data, which the game has; it ships next to SlimeCraft.dll. -->
+    <Reference Include="Newtonsoft.Json"><HintPath>lib\Newtonsoft.Json.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="BepInEx"><HintPath>$(GameDir)\BepInEx\core\BepInEx.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="0Harmony"><HintPath>$(GameDir)\BepInEx\core\0Harmony.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="$(Managed)\Assembly-CSharp.dll"><Private>false</Private></Reference>

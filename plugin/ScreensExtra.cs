@@ -34,7 +34,7 @@ namespace SlimeCraft
         {
             cell = c; Background = "gui/container/enchanting_table"; Title = McData.T("container.enchant", "Enchanter");
             Slots.Add(new Slot { X = 15, Y = 47, Get = () => item, Set = s => { item = s; Offers(); }, Max = 1 });
-            Slots.Add(new Slot { X = 35, Y = 47, Get = () => lapis, Set = s => lapis = s, CanPlace = s => s.Is("lapis_lazuli") || s.IsSr && s.Actor == Identifiable.Id.Kyanite });
+            Slots.Add(new Slot { X = 35, Y = 47, Get = () => lapis, Set = s => lapis = s, CanPlace = s => s.Is("lapis_lazuli") });
             AddPlayerInventory(8, 84);
         }
 

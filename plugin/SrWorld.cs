@@ -58,6 +58,57 @@ namespace SlimeCraft
             return top;
         }
 
+        // ------------------------------------------------------------------------------------------------ actors
+
+        private static readonly System.Collections.Generic.Dictionary<int, float> tarrDamage = new System.Collections.Generic.Dictionary<int, float>();
+
+        /// <summary>The Slime Rancher actor (slime, plort, chicken...) a collider belongs to, if it has a body.</summary>
+        public static Identifiable ActorOf(Collider c)
+        {
+            if (c == null) return null;
+            var id = c.GetComponentInParent<Identifiable>();
+            return id != null && id.GetComponent<Rigidbody>() != null ? id : null;
+        }
+
+        /// <summary>
+        /// Minecraft damage to a Slime Rancher actor: it is knocked back (push in blocks per tick, like Minecraft's
+        /// knockback), slimes squeal, and tarrs, which no water gun washes away any more, pop once they have taken
+        /// 10 Minecraft health points of damage.
+        /// </summary>
+        public static void HurtActor(Identifiable a, float dmg, Vector3 push)
+        {
+            if (a == null) return;
+            var rb = a.GetComponent<Rigidbody>();
+            if (rb != null && !rb.isKinematic) rb.AddForce(push * 20f, ForceMode.VelocityChange);
+            var id = a.id;
+            var at = a.transform.position;
+            if (Identifiable.IsSlime(id)) Sounds.Play(Identifiable.IsLargo(id) ? "entity.slime.hurt" : "entity.slime.hurt_small", at);
+            if (!Identifiable.IsTarr(id) || dmg <= 0) return;
+            int key = a.gameObject.GetInstanceID();
+            tarrDamage.TryGetValue(key, out var taken);
+            taken += dmg;
+            if (taken < 10f) { tarrDamage[key] = taken; return; }
+            tarrDamage.Remove(key);
+            Particles.Smoke(at);
+            Sounds.Play("entity.slime.death", at);
+            Destroyer.DestroyActor(a.gameObject, "SlimeCraft.Hurt");
+            XpOrb.Spawn(at, 3);
+        }
+
+        /// <summary>An explosion's push and damage on every Slime Rancher actor around (like Explosion.affectWorld on entities).</summary>
+        public static void ExplodeActors(Vector3 at, float q)
+        {
+            var done = new System.Collections.Generic.HashSet<Identifiable>();
+            foreach (var c in Physics.OverlapSphere(at, q, ~0, QueryTriggerInteraction.Ignore))
+            {
+                var a = ActorOf(c);
+                if (a == null || !done.Add(a)) continue;
+                float dist = Vector3.Distance(a.transform.position, at) / q;
+                float v = Mathf.Clamp01(1f - dist);
+                HurtActor(a, (v * v + v) / 2f * 7f * q + 1f, (a.transform.position - at).normalized * v + Vector3.up * v * 0.5f);
+            }
+        }
+
         public static BState BlockUnder(Vector3 feet)
         {
             var s = BlockWorld.Get(BlockWorld.CellAt(feet + Vector3.down * 0.1f));
@@ -87,7 +138,7 @@ namespace SlimeCraft
         public static bool IsTerrain(Collider c)
         {
             if (c == null || c.isTrigger) return false;
-            if (c.GetComponentInParent<Identifiable>() != null || c.GetComponent<BlockTag>() != null) return false;
+            if (c.GetComponentInParent<Identifiable>() != null || BlockWorld.CellOf(c, out _)) return false;
             if (c.attachedRigidbody != null && !c.attachedRigidbody.isKinematic) return false;
             int l = c.gameObject.layer;
             return l == 0 || l == 12 || l == 28;

@@ -64,7 +64,7 @@ namespace SlimeCraft
             return hitAny;
         }
 
-        protected virtual bool IgnoreHit(RaycastHit h) => h.collider.transform.IsChildOf(transform) || SrWorld.Player != null && h.collider.transform.IsChildOf(Player.main.transform);
+        protected virtual bool IgnoreHit(RaycastHit h) => h.collider.transform.IsChildOf(transform) || SrWorld.Player != null && h.collider.transform.IsChildOf(SrWorld.Player.transform);
         protected virtual void OnHit(RaycastHit h) { }
 
         protected bool Grounded() => Physics.SphereCast(transform.position + Vector3.up * 0.05f, Radius * 0.9f, Vector3.down, out var h, 0.08f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) && !IgnoreHit(h);
@@ -148,20 +148,18 @@ namespace SlimeCraft
 
         private void TryPickup()
         {
-            if (pickupDelay > 0 || Screens.Open || SrWorld.Player == null || Motor.SuspendedByGame || !Player.main.liveMixin.IsAlive()) return;
+            if (pickupDelay > 0 || Screens.Open || SrWorld.Player == null || Motor.SuspendedByGame || Health.Hp <= 0) return;
             var feet = SrWorld.Feet;
             var d = (feet + Vector3.up * 0.9f) - transform.position;
             // the player's box grown by 1 block sideways and 0.5 up and down
             if (Mathf.Abs(d.x) < 1.3f && Mathf.Abs(d.z) < 1.3f && transform.position.y > feet.y - 0.5f && transform.position.y < feet.y + 2.3f)
             {
-                int took;
-                if (Stack.IsSr && !SrBridge.IsVirtual(Stack.Actor)) { SrBridge.GiveReal(Stack.Actor, Stack.Count); took = Stack.Count; }
-                else took = Inventory.Add(Stack);
+                int took = Inventory.Add(Stack);
                 if (took > 0)
                 {
                     Sounds.Play("entity.item.pickup", transform.position, 0.2f, ((Random.value - Random.value) * 0.7f + 1f) * 2f);
                     Stack.Count -= took;
-                    if (Stack.Count <= 0) StartCoroutine(FlyIn(Player.main.transform));
+                    if (Stack.Count <= 0) StartCoroutine(FlyIn(SrWorld.Player.transform));
                 }
             }
         }
@@ -242,10 +240,10 @@ namespace SlimeCraft
             Age++;
             if (Age > 6000) { Destroy(gameObject); return; }
             if (InWater) { Vel *= 0.99f; Vel.y += 5.0E-4f; } else Vel.y -= 0.03f;
-            var p = Player.main;
+            var p = SrWorld.Player;
             if (p != null && !Motor.SuspendedByGame)
             {
-                var target = p.transform.position - Vector3.up * (Motor.EyeHeight - 0.5f);
+                var target = SrWorld.Feet + Vector3.up * 0.5f;
                 var d = target - transform.position;
                 float dist = d.magnitude / 8f;
                 if (dist < 1f)

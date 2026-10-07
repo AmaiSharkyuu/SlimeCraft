@@ -80,74 +80,58 @@ namespace SlimeCraft
             }
         }
 
-        /// <summary>"marmoset" (Subnautica's own MarmosetUBER, lit by its deferred lights and sky), "standard" or "legacy".</summary>
-        public static string ShaderMode = "marmoset";
-        private static Material marmosetTemplate;
+        /// <summary>"paintlight" (Slime Rancher's own shaders, lit by its sun, night and fog), "standard" or "legacy".</summary>
+        public static string ShaderMode = "paintlight";
         public static readonly List<Material> AllMats = new List<Material>();
+        private static Texture2D flatDepth;
 
-        private static Material MarmosetTemplate()
+        /// <summary>Finds a shader that is loaded in the game even when Shader.Find cannot see it.</summary>
+        public static Shader FindShader(string name)
         {
-            if (marmosetTemplate != null) return marmosetTemplate;
-            Material best = null; int bestScore = int.MaxValue;
-            foreach (var m in Resources.FindObjectsOfTypeAll<Material>())
-            {
-                if (m == null || m.shader == null || m.shader.name != "MarmosetUBER" || m.renderQueue >= 2450) continue;
-                // the plainest opaque material: fewest keywords, no infection / emission tricks
-                int score = m.shaderKeywords.Length * 10;
-                foreach (var k in m.shaderKeywords) if (k.Contains("INFECTION") || k.Contains("EMISSION") || k.Contains("FX") || k.Contains("GLASS")) score += 100;
-                if (score < bestScore) { bestScore = score; best = m; }
-            }
-            if (best != null) { marmosetTemplate = new Material(best) { name = "mc:marmoset template" }; Object.DontDestroyOnLoad(marmosetTemplate); }
-            return marmosetTemplate;
+            var sh = Shader.Find(name);
+            if (sh != null) return sh;
+            foreach (var x in Resources.FindObjectsOfTypeAll<Shader>()) if (x.name == name) return x;
+            return null;
         }
 
-        /// <summary>A material over the atlas (or `tex`): 0 opaque, 1 cutout, 2 translucent, matte like Minecraft.</summary>
+        /// <summary>
+        /// A material over the atlas (or `tex`): 0 opaque, 1 cutout, 2 translucent, matte like Minecraft.
+        /// Slime Rancher paints its world with its own "Paintlight" shaders, which carry the game's lighting and fog;
+        /// Unity's stock shaders get washed out by that fog, so Minecraft textures go into Paintlight/Basic (opaque) and
+        /// Paintlight/Cutout (glass, leaves, plants), with a flat grey "depth" so the pixels stay as Minecraft drew them.
+        /// Translucent water, ice and stained glass use the sprite shader, which keeps their see-through tint.
+        /// </summary>
         public static Material MakeMat(int mode, Texture tex = null)
         {
             Material m = null;
-            if (ShaderMode == "marmoset" && MarmosetTemplate() != null)
+            var t = tex != null ? tex : Atlas.Texture;
+            Shader paint = ShaderMode == "paintlight" && mode != 2 ? FindShader(mode == 1 ? "SR/Paintlight/Cutout" : "SR/Paintlight/Basic") : null;
+            if (paint != null)
             {
-                m = new Material(MarmosetTemplate()) { name = "mc:marmoset" + mode };
-                m.shaderKeywords = new string[0];
-                m.EnableKeyword("_ZWRITE_ON");
-                m.SetTexture("_MainTex", tex != null ? tex : Atlas.Texture);
-                m.SetColor("_Color", Color.white);
-                m.SetTexture("_BumpMap", null);
-                m.SetTexture("_SpecTex", Texture2D.blackTexture);
-                m.SetTexture("_Illum", null);
-                m.SetFloat("_EnableGlow", 0);
-                m.SetFloat("_SpecInt", 0);
-                m.SetFloat("_Shininess", 1);
-                m.SetFloat("_Fresnel", 0);
-                m.SetColor("_SpecColor", Color.black);
-                m.SetFloat("_EnableLighting", 1);
-                m.SetFloat("_EnableMainMaps", 1);
-                m.SetFloat("_EnableInfection", 0);
-                m.SetFloat("_MyCullVariable", 2);
-                if (mode == 1)
+                if (flatDepth == null)
                 {
-                    m.SetFloat("_EnableCutOff", 1);
-                    m.SetFloat("_Cutoff", 0.5f);
-                    m.EnableKeyword("MARMO_ALPHA_CLIP");
-                    m.renderQueue = 2450;
+                    flatDepth = new Texture2D(4, 4);
+                    var px = new Color[16];
+                    for (int i = 0; i < 16; i++) px[i] = new Color(0.5f, 0.5f, 0.5f, 1f);
+                    flatDepth.SetPixels(px); flatDepth.Apply();
+                    Object.DontDestroyOnLoad(flatDepth);
                 }
-                else if (mode == 2)
-                {
-                    m.SetFloat("_Mode", 2);
-                    m.SetFloat("_ZWrite", 0);
-                    m.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-                    m.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-                    m.DisableKeyword("_ZWRITE_ON");
-                    m.EnableKeyword("_ALPHABLEND_ON");
-                    m.EnableKeyword("WBOIT");
-                    m.renderQueue = 3101;
-                }
+                m = new Material(paint) { name = "mc:paint" + mode };
+                m.SetTexture("_PrimaryTex", t);
+                m.SetTexture("_Depth", flatDepth);
+                m.mainTexture = t;
+                if (mode == 1) { m.SetFloat("_Cutoff", 0.5f); m.EnableKeyword("_ALPHATEST_ON"); m.renderQueue = 2450; }
                 else m.renderQueue = 2000;
+            }
+            else if (mode == 2 && ShaderMode == "paintlight")
+            {
+                m = new Material(Shader.Find("Sprites/Default")) { name = "mc:sprite2", mainTexture = t };
+                m.renderQueue = 3000;
             }
             else
             {
                 m = new Material(Shader.Find(ShaderMode == "legacy" ? "Legacy Shaders/Diffuse" : "Standard")) { name = "mc:std" + mode };
-                m.mainTexture = tex != null ? tex : Atlas.Texture;
+                m.mainTexture = t;
                 m.SetFloat("_Glossiness", 0f);
                 m.SetFloat("_Metallic", 0f);
                 m.EnableKeyword("_GLOSSYREFLECTIONS_OFF");
@@ -526,22 +510,11 @@ namespace SlimeCraft
 namespace SlimeCraft
 {
     /// <summary>
-    /// Subnautica lights its MarmosetUBER materials with its own sky / ambient probes through a SkyApplier on each
-    /// object; Minecraft things get one too so they are lit like the rest of the world (dark at depth, warm in bases).
+    /// Subnautica needed a sky applier on every object; Slime Rancher's Paintlight shaders light themselves from the
+    /// scene, so there is nothing to attach. Kept so the engine's calls stay in one place.
     /// </summary>
     public static class Sky
     {
-        public static void Apply(GameObject go, bool dynamic = true)
-        {
-            if (go == null) return;
-            try
-            {
-                var sa = go.GetComponent<SkyApplier>() ?? go.AddComponent<SkyApplier>();
-                sa.renderers = go.GetComponentsInChildren<Renderer>(true);
-                sa.anchorSky = Skies.Auto;
-                sa.dynamic = dynamic;
-            }
-            catch (System.Exception e) { Plugin.Log.LogWarning("SkyApplier: " + e.Message); }
-        }
+        public static void Apply(GameObject go, bool dynamic = true) { }
     }
 }

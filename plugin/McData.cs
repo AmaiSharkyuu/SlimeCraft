@@ -221,6 +221,10 @@ namespace SlimeCraft
                 case "rightClick": return French ? "Clic droit" : "Right click";
                 case "slimeStorage": return French ? "Stockage de Slime" : "Slime Storage";
                 case "slimeRancher": return "Slime Rancher";
+                case "welcome":
+                    return French
+                        ? "SlimeCraft : tu joues Minecraft dans Slime Rancher. E = inventaire, T = chat, F5 = vue, F3+F4 = mode de jeu, clic droit = attraper un slime."
+                        : "SlimeCraft: you play Minecraft in Slime Rancher. E = inventory, T = chat, F5 = view, F3+F4 = game mode, right click = grab a slime.";
                 case "missingAssets":
                     return French
                         ? "SlimeCraft : les textures et sons de Minecraft ne sont pas encore extraits.\nFerme le jeu et lance SlimeCraft-Assets.exe (dans BepInEx\\plugins\\SlimeCraft), il faut Minecraft 1.20.1."

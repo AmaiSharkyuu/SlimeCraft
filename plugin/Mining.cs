@@ -46,7 +46,7 @@ namespace SlimeCraft
         {
             var h = Inventory.ArmorIn("head");
             if (h != null && h.Level("aqua_affinity") > 0) return true;
-            try { return global::Inventory.main != null && global::Inventory.main.equipment.GetCount(Identifiable.Id.Rebreather) > 0; } catch { return false; }
+            return false;
         }
 
         public static float BreakingSpeed(BlockDef b, ItemStack tool)

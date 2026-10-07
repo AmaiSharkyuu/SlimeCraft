@@ -153,16 +153,15 @@ namespace SlimeCraft
             }
             float q = power * 2f;
             // the player
-            var pl = Player.main;
-            if (pl != null)
+            if (SrWorld.Player != null)
             {
-                float dist = Vector3.Distance(pl.transform.position - Vector3.up * 0.9f, at) / q;
+                float dist = Vector3.Distance(SrWorld.Feet + Vector3.up * 0.9f, at) / q;
                 if (dist <= 1f)
                 {
-                    float exposure = Physics.Linecast(at, pl.transform.position, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) ? 0.3f : 1f;
+                    float exposure = Physics.Linecast(at, SrWorld.Eye, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) ? 0.3f : 1f;
                     float v = (1f - dist) * exposure;
                     Health.Damage((int)((v * v + v) / 2f * 7f * q + 1f), "explosion");
-                    var push = (pl.transform.position - at).normalized * v * (1f - Enchants.Level(Inventory.ArmorIn("legs"), "blast_protection") * 0.15f);
+                    var push = (SrWorld.Eye - at).normalized * v * (1f - Enchants.Level(Inventory.ArmorIn("legs"), "blast_protection") * 0.15f);
                     Motor.Vel += push;
                 }
             }
@@ -172,14 +171,8 @@ namespace SlimeCraft
                 float v = 1f - dist;
                 m.Damage((int)((v * v + v) / 2f * 7f * q + 1f), "explosion", 0, (m.transform.position - at).normalized * v);
             }
-            foreach (var c in Physics.OverlapSphere(at, q, ~0, QueryTriggerInteraction.Ignore))
-            {
-                var lm = c.GetComponentInParent<LiveMixin>();
-                if (lm == null || pl != null && lm == pl.liveMixin || !lm.IsAlive()) continue;
-                float dist = Vector3.Distance(lm.transform.position, at) / q;
-                float v = Mathf.Clamp01(1f - dist);
-                lm.TakeDamage(((v * v + v) / 2f * 7f * q + 1f) * Health.Scale, at, DamageType.Explosive, null);
-            }
+            // slimes, plorts and chickens fly off; tarrs pop
+            SrWorld.ExplodeActors(at, q);
         }
     }
 
@@ -194,6 +187,7 @@ namespace SlimeCraft
         private Transform vis;
         private Vector3 stuckDir;
         private readonly HashSet<Object> pierced = new HashSet<Object>();
+        private readonly HashSet<Identifiable> piercedActors = new HashSet<Identifiable>();
 
         public static Arrow Create(ItemStack item, Vector3 at, Vector3 dir, float speed, float divergence)
         {
@@ -264,16 +258,16 @@ namespace SlimeCraft
             }
             var from = transform.position;
             var to = from + Vel;
-            // blocks, mobs, Subnautica creatures and geometry along the path
+            // blocks, mobs, Slime Rancher actors and geometry along the path
             float best = Vel.magnitude;
-            Mob hitMob = null; LiveMixin hitLive = null; bool hitWorld = false; Vector3 hitPoint = to, hitNormal = Vector3.up;
+            Mob hitMob = null; Identifiable hitLive = null; bool hitWorld = false; Vector3 hitPoint = to, hitNormal = Vector3.up;
             if (Interaction.BlockRay(from, Vel.normalized, best, out var cell, out var face, out var pt, out var bd)) { best = bd; hitWorld = true; hitPoint = pt; hitNormal = (Vector3)BlockWorld.Offset(face); }
             var m = Mobs.Raycast(from, Vel.normalized, best, out float md);
             if (m != null && !pierced.Contains(m)) { best = md; hitMob = m; hitWorld = false; hitPoint = from + Vel.normalized * md; }
             if (Physics.SphereCast(from, 0.05f, Vel.normalized, out var h, best, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) && !IgnoreHit(h) && h.collider.GetComponentInParent<Mob>() == null)
             {
-                var lm = h.collider.GetComponentInParent<LiveMixin>();
-                if (lm != null && lm.IsAlive() && lm.GetComponent<Creature>() != null && !pierced.Contains(lm)) { hitLive = lm; hitMob = null; hitWorld = false; }
+                var lm = SrWorld.ActorOf(h.collider);
+                if (lm != null && !piercedActors.Contains(lm)) { hitLive = lm; hitMob = null; hitWorld = false; }
                 else { hitWorld = true; hitMob = null; }
                 hitPoint = h.point; hitNormal = h.normal;
             }
@@ -287,9 +281,8 @@ namespace SlimeCraft
                 if (hitMob != null) { hitMob.Damage(dmg, "arrow", Punch * 0.6f, push); if (Fire) hitMob.SetOnFire(5); pierced.Add(hitMob); }
                 else
                 {
-                    hitLive.TakeDamage(dmg * Health.Scale, hitPoint, Fire ? DamageType.Fire : DamageType.Normal, Player.main.gameObject);
-                    pierced.Add(hitLive);
-                    if (!hitLive.IsAlive()) XpOrb.Spawn(hitLive.transform.position, Mathf.Clamp(Mathf.RoundToInt(hitLive.maxHealth / 20f), 1, 50));
+                    SrWorld.HurtActor(hitLive, dmg, push + Vel.normalized * 0.3f);
+                    piercedActors.Add(hitLive);
                 }
                 if (Item.Is("tipped_arrow") && Item.Potion != null && hitMob != null && McData.Potions.TryGetValue(Item.Potion, out var effs)) foreach (var e in effs) hitMob.AddEffect(e.Effect, e.Duration / 8, e.Amplifier);
                 Sounds.Play(Trident ? "item.trident.hit" : "entity.arrow.hit", hitPoint);
@@ -366,15 +359,14 @@ namespace SlimeCraft
             Age++;
             var from = transform.position;
             float len = Vel.magnitude;
-            bool hit = false; Vector3 point = from + Vel; Mob mob = null; LiveMixin live = null;
+            bool hit = false; Vector3 point = from + Vel; Mob mob = null; Identifiable live = null;
             if (Interaction.BlockRay(from, Vel / Mathf.Max(len, 1e-5f), len, out _, out _, out var pt, out var d)) { hit = true; point = pt; len = d; }
             var m = Mobs.Raycast(from, Vel / Mathf.Max(len, 1e-5f), len, out float md);
             if (m != null) { hit = true; mob = m; point = from + Vel.normalized * md; len = md; }
             if (Physics.SphereCast(from, 0.1f, Vel.normalized, out var h, len, SrWorld.SolidMask, QueryTriggerInteraction.Ignore) && !IgnoreHit(h))
             {
                 hit = true; point = h.point; mob = null;
-                var lm = h.collider.GetComponentInParent<LiveMixin>();
-                if (lm != null && lm.IsAlive()) live = lm;
+                live = SrWorld.ActorOf(h.collider);
             }
             if (hit) { Impact(point, mob, live); Destroy(gameObject); return; }
             transform.position += Vel;
@@ -384,7 +376,7 @@ namespace SlimeCraft
             if (Age > 400) Destroy(gameObject);
         }
 
-        private void Impact(Vector3 at, Mob mob, LiveMixin live)
+        private void Impact(Vector3 at, Mob mob, Identifiable live)
         {
             var id = Item.Item.Id;
             switch (id)
@@ -400,10 +392,9 @@ namespace SlimeCraft
                     break;
                 case "ender_pearl":
                     // teleports the player and costs 5 health
-                    var p = Player.main;
-                    if (p != null)
+                    if (SrWorld.Player != null)
                     {
-                        p.SetPosition(at + Vector3.up * Motor.EyeHeight);
+                        SrWorld.Teleport(at);
                         Motor.FallDistance = 0;
                         Health.Damage(5f, "fall");
                         Sounds.Play("entity.player.teleport", at);
@@ -420,10 +411,9 @@ namespace SlimeCraft
                     Particles.Splash(at, ItemRender.PotionColor(Item.Potion));
                     if (Item.Potion != null && McData.Potions.TryGetValue(Item.Potion, out var effs))
                     {
-                        var pl = Player.main;
-                        if (pl != null)
+                        if (SrWorld.Player != null)
                         {
-                            float dist = Vector3.Distance(pl.transform.position - Vector3.up, at);
+                            float dist = Vector3.Distance(SrWorld.Feet + Vector3.up * 0.6f, at);
                             if (dist < 4f)
                             {
                                 float k = 1f - dist / 4f;
@@ -437,19 +427,18 @@ namespace SlimeCraft
                         foreach (var mb in Mobs.Near(at, 4f)) foreach (var e in effs) mb.AddEffect(e.Effect, e.Duration, e.Amplifier);
                         foreach (var c in Physics.OverlapSphere(at, 4f, ~0, QueryTriggerInteraction.Ignore))
                         {
-                            var lm = c.GetComponentInParent<LiveMixin>();
-                            if (lm == null || lm == Player.main?.liveMixin || !lm.IsAlive()) continue;
+                            var lm = SrWorld.ActorOf(c);
+                            if (lm == null) continue;
                             foreach (var e in effs)
                             {
-                                if (e.Effect == "instant_damage") lm.TakeDamage((6 << e.Amplifier) * Health.Scale, at, DamageType.Poison, null);
-                                if (e.Effect == "instant_health") lm.AddHealth((4 << e.Amplifier) * Health.Scale);
-                                if (e.Effect == "poison") lm.TakeDamage(4 * Health.Scale, at, DamageType.Poison, null);
+                                if (e.Effect == "instant_damage") SrWorld.HurtActor(lm, 6 << e.Amplifier, Vector3.zero);
+                                if (e.Effect == "poison") SrWorld.HurtActor(lm, 4, Vector3.zero);
                             }
                         }
                     }
                     break;
             }
-            if (live != null && (id == "snowball" || id == "egg")) live.TakeDamage(0.01f, at);
+            if (live != null && (id == "snowball" || id == "egg")) SrWorld.HurtActor(live, 0f, Vel.normalized * 0.4f);
         }
 
         protected override void Render(float partial)
@@ -535,13 +524,13 @@ namespace SlimeCraft
         {
             if (Ticks <= 0) return;
             Ticks--;
-            var p = Player.main;
-            if (p == null) return;
-            foreach (var m in Mobs.Near(p.transform.position, 1.5f)) m.Damage(8f, "player", 0.4f, Motor.Vel.normalized);
-            foreach (var c in Physics.OverlapSphere(p.transform.position, 1.5f, ~0, QueryTriggerInteraction.Ignore))
+            if (SrWorld.Player == null) return;
+            var eye = SrWorld.Eye;
+            foreach (var m in Mobs.Near(eye, 1.5f)) m.Damage(8f, "player", 0.4f, Motor.Vel.normalized);
+            foreach (var c in Physics.OverlapSphere(eye, 1.5f, ~0, QueryTriggerInteraction.Ignore))
             {
-                var lm = c.GetComponentInParent<LiveMixin>();
-                if (lm != null && lm != p.liveMixin && lm.IsAlive() && lm.GetComponent<Creature>() != null) { lm.TakeDamage(8f * Health.Scale, p.transform.position, DamageType.Normal, p.gameObject); Ticks = 0; Motor.Vel *= -0.2f; break; }
+                var lm = SrWorld.ActorOf(c);
+                if (lm != null) { SrWorld.HurtActor(lm, 8f, Motor.Vel.normalized * 0.4f); Ticks = 0; Motor.Vel *= -0.2f; break; }
             }
         }
     }

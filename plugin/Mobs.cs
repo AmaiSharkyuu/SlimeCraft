@@ -5,10 +5,10 @@ using UnityEngine;
 namespace SlimeCraft
 {
     /// <summary>
-    /// Minecraft's aquatic mobs living in Subnautica's ocean: cod, salmon, tropical fish, pufferfish, squid, glow squid,
-    /// dolphins, turtles, axolotls, frogs, tadpoles, drowned, guardians and elder guardians. Their models are read from
-    /// Minecraft's own model code (tools/mob_models.py), their health, size and loot from the dump and loot tables.
-    /// Subnautica's own creatures can be summoned the same way.
+    /// Minecraft's aquatic mobs living in Slime Rancher's ponds and the Slime Sea: cod, salmon, tropical fish,
+    /// pufferfish, squid, glow squid, dolphins, turtles, axolotls, frogs, tadpoles, drowned, guardians and elder
+    /// guardians. Their models are read from Minecraft's own model code (tools/mob_models.py), their health, size and
+    /// loot from the dump and loot tables. Slime Rancher's slimes and creatures can be summoned the same way.
     /// </summary>
     public static class Mobs
     {
@@ -52,25 +52,13 @@ namespace SlimeCraft
 
         public static bool IsMcMob(string type) => System.Array.IndexOf(Aquatic, type) >= 0;
 
-        /// <summary>/summon and spawn eggs: a Minecraft aquatic mob, or any Subnautica creature by its Identifiable.Id name.</summary>
+        /// <summary>/summon and spawn eggs: a Minecraft mob, or any Slime Rancher slime, chicken or thing by its name.</summary>
         public static bool Summon(string type, Vector3 at)
         {
-            type = type.Replace("minecraft:", "").ToLowerInvariant();
+            type = type.Replace("minecraft:", "").Replace("slimerancher:", "").ToLowerInvariant();
             if (IsMcMob(type)) { Mob.Create(type, at); return true; }
-            if (SrCreatures.TryGet(type, out var tt)) { Game.I.StartCoroutine(SpawnSn(tt, at)); return true; }
+            if (SrCreatures.TryGet(type, out var tt)) return SrBridge.Spawn(tt, at, Quaternion.Euler(0, Random.value * 360f, 0)) != null;
             return false;
-        }
-
-        private static System.Collections.IEnumerator SpawnSn(Identifiable.Id tt, Vector3 at)
-        {
-            var task = CraftData.GetPrefabForTechTypeAsync(tt);
-            yield return task;
-            var prefab = task.GetResult();
-            if (prefab == null) { Chat.System("§c" + McData.T("commands.summon.failed", "Impossible d'invoquer l'entité")); yield break; }
-            var go = Object.Instantiate(prefab, at, Quaternion.Euler(0, Random.value * 360f, 0));
-            go.SetActive(true);
-            LargeWorldEntity.Register(go);
-            CrafterLogic.NotifyCraftEnd(go, tt);
         }
 
         public static Mob Raycast(Vector3 origin, Vector3 dir, float max, out float dist)
@@ -101,7 +89,7 @@ namespace SlimeCraft
         /// <summary>
         /// A light natural spawner, like Minecraft's water creature / ambient / monster categories around the player:
         /// fish near the surface, squid in the dark, dolphins and turtles now and then, drowned at night and guardians
-        /// in the deep. Capped low so Subnautica's own fauna stays the main life of the ocean.
+        /// in the deep water. Capped low so the slimes stay the main life of the Far, Far Range.
         /// </summary>
         public static void NaturalSpawn()
         {
@@ -113,17 +101,19 @@ namespace SlimeCraft
             var p = SrWorld.Eye;
             var at = p + Random.onUnitSphere * Random.Range(24f, 44f);
             if (!SrWorld.IsWater(at) || Physics.CheckSphere(at, 1f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore)) return;
-            float depth = -at.y;
-            bool night = DayNightCycle.main != null && !DayNightCycle.main.IsDay();
+            float depth = SrWorld.WaterLevelAt(at) - at.y;
+            var td = SRSingleton<SceneContext>.Instance.TimeDirector;
+            float hour = td != null ? td.CurrHour() : 12f;
+            bool night = hour < 6f || hour >= 19f;
             string type;
             float r = Random.value;
-            if (depth > 300 && r < 0.08f) type = "guardian";
-            else if (night && depth > 15 && r < 0.18f) type = "drowned";
-            else if (depth > 100 && r < 0.35f) type = "glow_squid";
-            else if (depth < 60 && r < 0.45f) type = Random.value < 0.5f ? "cod" : "salmon";
-            else if (depth < 40 && r < 0.6f) type = "tropical_fish";
-            else if (depth < 80 && r < 0.7f) type = "squid";
-            else if (depth < 30 && r < 0.75f) type = "dolphin";
+            if (depth > 12 && r < 0.05f) type = "guardian";
+            else if (night && depth > 3 && r < 0.18f) type = "drowned";
+            else if (depth > 8 && r < 0.3f) type = "glow_squid";
+            else if (r < 0.45f) type = Random.value < 0.5f ? "cod" : "salmon";
+            else if (r < 0.6f) type = "tropical_fish";
+            else if (depth > 3 && r < 0.7f) type = "squid";
+            else if (depth > 4 && r < 0.75f) type = "dolphin";
             else if (r < 0.8f) type = "pufferfish";
             else return;
             int group = type == "cod" || type == "salmon" || type == "tropical_fish" ? Random.Range(3, 7) : type == "dolphin" ? Random.Range(1, 3) : 1;
@@ -135,7 +125,7 @@ namespace SlimeCraft
         }
     }
 
-    /// <summary>Subnautica creature names for /summon (Identifiable.Id names, case-insensitive) and their auto-completion.</summary>
+    /// <summary>Slime Rancher names for /summon (Identifiable.Id names, case-insensitive) and their auto-completion.</summary>
     public static class SrCreatures
     {
         private static List<string> names;
@@ -148,28 +138,14 @@ namespace SlimeCraft
                 names = new List<string>();
                 foreach (Identifiable.Id t in System.Enum.GetValues(typeof(Identifiable.Id)))
                 {
-                    if (t == Identifiable.Id.NONE) continue;
-                    var s = t.ToString();
-                    if (IsCreature(t)) names.Add(s.ToLowerInvariant());
+                    if (t == Identifiable.Id.NONE || Identifiable.IsGordo(t) || Identifiable.IsLiquid(t)) continue;
+                    GameObject prefab = null;
+                    try { prefab = SRSingleton<GameContext>.Instance.LookupDirector.GetPrefab(t); } catch { }
+                    if (prefab != null) names.Add(t.ToString().ToLowerInvariant());
                 }
                 names.Sort();
                 return names;
             }
-        }
-
-        private static readonly HashSet<string> extra = new HashSet<string> { "seamoth", "exosuit", "cyclops", "rocketbase" };
-
-        /// <summary>Creature-ish TechTypes: everything that is a fish, leviathan, critter or egg-hatched animal, plus vehicles.</summary>
-        private static bool IsCreature(Identifiable.Id t)
-        {
-            var s = t.ToString();
-            if (extra.Contains(s.ToLowerInvariant())) return true;
-            string[] kinds = { "Leviathan", "Fish", "Peeper", "Bladderfish", "Boomerang", "Eyeye", "Garryfish", "GarryFish", "HoleFish", "Hoopfish", "Hoverfish", "Oculus", "Reginald", "Spadefish", "Spinefish",
-                "Stalker", "Sandshark", "BoneShark", "Crash", "Biter", "Bleeder", "Blighter", "Gasopod", "Jellyray", "Mesmer", "Rabbitray", "Shocker", "Shuttlebug", "Skyray", "SpineEel",
-                "Warper", "Cutefish", "Crabsnake", "CrabSquid", "LavaLizard", "LavaLarva", "Jumper", "CaveCrawler", "Floater", "GhostRay", "Crabsquid", "SeaDragon", "SeaTreader", "Reefback", "SeaEmperor", "GhostLeviathan", "ReaperLeviathan", "Lavaboomerang", "LavaBoomerang", "LavaEyeye" };
-            if (s.StartsWith("Cooked") || s.StartsWith("Cured") || s.EndsWith("Egg") || s.EndsWith("EggUndiscovered") || s.EndsWith("Fragment") || s.EndsWith("Juvenile") && false) return false;
-            foreach (var k in kinds) if (s.Contains(k)) return true;
-            return false;
         }
 
         public static bool TryGet(string name, out Identifiable.Id t)
@@ -368,8 +344,8 @@ namespace SlimeCraft
                 MoveCollide();
                 return;
             }
-            var p = Player.main;
-            if (p != null && Natural && (transform.position - p.transform.position).sqrMagnitude > 128 * 128) { Destroy(gameObject); return; }
+            var p = SrWorld.Player;
+            if (p != null && Natural && (transform.position - SrWorld.Eye).sqrMagnitude > 128 * 128) { Destroy(gameObject); return; }
             InWater = SrWorld.IsWater(transform.position + Vector3.up * Height * 0.5f);
             foreach (var e in new List<Effects.Inst>(effects.Values))
             {
@@ -419,10 +395,10 @@ namespace SlimeCraft
         private void Swim(float speed)
         {
             if (!InWater) return;
-            var p = Player.main;
+            var p = SrWorld.Player;
             if (targetPlayer && p != null && Type != "dolphin" && !Hostile)
             {
-                var away = transform.position - p.transform.position;
+                var away = transform.position - SrWorld.Eye;
                 if (away.magnitude < 12f) { Vel += away.normalized * speed * 1.5f; return; }
                 targetPlayer = false;
             }
@@ -437,13 +413,13 @@ namespace SlimeCraft
             Vel += wander * speed * 0.3f;
         }
 
-        private void Pufferfish(Player p)
+        private void Pufferfish(GameObject p)
         {
             // PufferfishEntity: puffs up when a player is within 2 blocks and stings those it touches
-            bool near = p != null && (p.transform.position - transform.position).sqrMagnitude < 4f && !GameMode.Creative;
+            bool near = p != null && (SrWorld.Eye - transform.position).sqrMagnitude < 4f && !GameMode.Creative;
             if (near && puff < 2) { if (++puffTicks > 20) { puff++; puffTicks = 0; Sounds.Play("entity.puffer_fish.blow_up", transform.position); Rebuild(); } }
             else if (!near && puff > 0) { if (++puffTicks > 60) { puff--; puffTicks = 0; Sounds.Play("entity.puffer_fish.blow_out", transform.position); Rebuild(); } }
-            if (puff > 0 && p != null && (p.transform.position - Vector3.up * 0.9f - transform.position).magnitude < 1.2f && attackCooldown == 0)
+            if (puff > 0 && p != null && (SrWorld.Eye - Vector3.up * 0.9f - transform.position).magnitude < 1.2f && attackCooldown == 0)
             {
                 Health_Hurt(1 + puff, "mob");
                 Effects.Add("poison", 60 * puff, 0);
@@ -461,11 +437,11 @@ namespace SlimeCraft
             model = EntityModelInstance.Create(Mobs.Build(json), McTex.Get("entity/fish/pufferfish"), modelRoot, 0, true, 32, 32);
         }
 
-        private void Dolphin(Player p)
+        private void Dolphin(GameObject p)
         {
             Swim(0.06f);
             if (p == null) return;
-            var d = p.transform.position - transform.position;
+            var d = SrWorld.Eye - transform.position;
             // DolphinEntity.SwimWithPlayerGoal: swims alongside a nearby swimming player and gives Dolphin's Grace
             if (d.magnitude < 10f && Motor.InWater)
             {
@@ -474,10 +450,10 @@ namespace SlimeCraft
             }
         }
 
-        private void Drowned(Player p)
+        private void Drowned(GameObject p)
         {
-            if (p == null || GameMode.Creative || !p.liveMixin.IsAlive()) { Swim(0.02f); return; }
-            var target = p.transform.position - Vector3.up * (Motor.EyeHeight - 0.9f);
+            if (p == null || GameMode.Creative || SlimeCraft.Health.Hp <= 0) { Swim(0.02f); return; }
+            var target = SrWorld.Eye - Vector3.up * (Motor.EyeHeight - 0.9f);
             var d = target - transform.position - Vector3.up * Height * 0.5f;
             if (d.magnitude > 35f) { Swim(0.02f); return; }
             // DrownedEntity: swims towards its target when in water, attacks in reach (ZombieAttackGoal)
@@ -495,11 +471,11 @@ namespace SlimeCraft
 
         private int swingArm;
 
-        private void Guardian(Player p)
+        private void Guardian(GameObject p)
         {
             Swim(0.03f);
-            if (p == null || GameMode.Creative || !p.liveMixin.IsAlive()) { beamTicks = 0; SetBeam(false); return; }
-            var eye = p.transform.position;
+            if (p == null || GameMode.Creative || SlimeCraft.Health.Hp <= 0) { beamTicks = 0; SetBeam(false); return; }
+            var eye = SrWorld.Eye;
             var from = transform.position + Vector3.up * Height * 0.5f;
             float dist = Vector3.Distance(eye, from);
             bool sees = dist < 16f && !Physics.Linecast(from, eye, SrWorld.SolidMask, QueryTriggerInteraction.Ignore);

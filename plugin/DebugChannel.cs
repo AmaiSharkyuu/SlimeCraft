@@ -7,13 +7,13 @@ namespace SlimeCraft
 {
     /// <summary>
     /// A command file so the game can be driven from outside while it runs (the Claude app sits in front of the
-    /// game window). Write one command per line into %TEMP%\subnauticraft_cmd.txt; the file is consumed and the
-    /// result lands in the BepInEx log or in %TEMP%\subnauticraft_dump.txt.
+    /// game window). Write one command per line into %TEMP%\slimecraft_cmd.txt; the file is consumed and the
+    /// result lands in the BepInEx log or in %TEMP%\slimecraft_dump.txt.
     /// </summary>
     public class DebugChannel : MonoBehaviour
     {
-        public static readonly string CmdPath = Path.Combine(Path.GetTempPath(), "subnauticraft_cmd.txt");
-        public static readonly string DumpPath = Path.Combine(Path.GetTempPath(), "subnauticraft_dump.txt");
+        public static readonly string CmdPath = Path.Combine(Path.GetTempPath(), "slimecraft_cmd.txt");
+        public static readonly string DumpPath = Path.Combine(Path.GetTempPath(), "slimecraft_dump.txt");
         private float next;
 
         /// <summary>Other systems hook extra test verbs here.</summary>
@@ -46,25 +46,28 @@ namespace SlimeCraft
             {
                 case "shot": ScreenCapture.CaptureScreenshot(arg); break;
                 case "newgame":
+                    SRSingleton<GameContext>.Instance.AutoSaveDirector.LoadNewGame(arg, Identifiable.Id.PINK_SLIME, PlayerState.GameMode.CLASSIC, () => Plugin.Log.LogError("newgame error"));
+                    break;
+                case "load":
                 {
-                    var mode = arg == "creative" ? global::GameMode.Creative : global::GameMode.Survival;
-                    var menu = uGUI_MainMenu.main;
-                    if (menu != null) Game.I.StartCoroutine(menu.StartNewGame(mode));
+                    var asd = SRSingleton<GameContext>.Instance.AutoSaveDirector;
+                    foreach (var kv in asd.AvailableGamesByGameName())
+                    {
+                        if (kv.Value.Count == 0) continue;
+                        var sum = kv.Value[0];
+                        Plugin.Log.LogInfo("save: game=" + sum.name + " save=" + sum.saveName + " display=" + sum.displayName);
+                        if (sum.displayName == arg || sum.name == arg) { asd.BeginLoad(sum.name, sum.saveName, () => Plugin.Log.LogError("load error")); return; }
+                    }
                     break;
                 }
-                case "load":
-                    Game.I.StartCoroutine(uGUI_MainMenu.main.LoadGameAsync(arg, "", 0, global::GameMode.Survival));
-                    break;
-                case "save": Game.I.StartCoroutine(IngameMenu.main.SaveGameAsync()); break;
-                case "console": DevConsole.SendConsoleCommand(arg); break;
+                case "save": SRSingleton<GameContext>.Instance.AutoSaveDirector.SaveAllNow(); break;
                 case "dump": Dump(arg); break;
                 case "timescale": Time.timeScale = float.Parse(arg, System.Globalization.CultureInfo.InvariantCulture); break;
-                case "skipintro": { var i = FindObjectOfType<uGUI_SceneIntro>(); if (i != null) i.Stop(true); break; }
                 case "shaders":
                 {
                     var sb = new StringBuilder();
                     foreach (var sh in Resources.FindObjectsOfTypeAll<Shader>()) sb.AppendLine(sh.name + (sh.isSupported ? "" : " (unsupported)"));
-                    foreach (var n in new[] { "Standard", "Legacy Shaders/Diffuse", "Unlit/Texture", "Legacy Shaders/Transparent/Cutout/Diffuse", "Sprites/Default", "UI/Default", "MarmosetUBER", "Hidden/Internal-Colored" })
+                    foreach (var n in new[] { "Standard", "Legacy Shaders/Diffuse", "Unlit/Texture", "Legacy Shaders/Transparent/Cutout/Diffuse", "Sprites/Default", "UI/Default", "SR/Paintlight/Basic", "Hidden/Internal-Colored" })
                         sb.AppendLine("FIND " + n + " => " + (Shader.Find(n) != null));
                     Write(sb.ToString());
                     break;
@@ -143,7 +146,7 @@ namespace SlimeCraft
         {
             var sb = new StringBuilder();
             GameObject go = null;
-            if (what == "player" || what == "") go = SrWorld.Player != null ? Player.main.gameObject : null;
+            if (what == "player" || what == "") go = SrWorld.Player;
             else if (what == "camera") go = Camera.main != null ? Camera.main.transform.root.gameObject : null;
             else go = GameObject.Find(what);
             if (go == null)

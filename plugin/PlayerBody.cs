@@ -101,11 +101,10 @@ namespace SlimeCraft
         /// <summary>Every frame with interpolated state.</summary>
         public void Pose(float td, float swing, float pitchDeg, Vector3 eyeOffset)
         {
-            var p = Player.main;
-            if (p == null) return;
+            if (SrWorld.Player == null) return;
             UpdateHeld();
             UpdateArmor();
-            var feet = p.transform.position + eyeOffset - Vector3.up * Motor.EyeHeight;
+            var feet = SrWorld.Feet + eyeOffset;
             float headYaw = View.I != null ? View.I.Yaw : 0;
             float by = Mathf.LerpAngle(prevBodyYaw, bodyYaw, td);
             float lean = Mathf.Lerp(Motor.PrevSwimAmount, Motor.SwimAmount, td);
@@ -161,7 +160,7 @@ namespace SlimeCraft
             float rap = Mathf.Cos(f * 0.6662f + Mathf.PI) * 2f * g * 0.5f / kk, lap = Mathf.Cos(f * 0.6662f) * 2f * g * 0.5f / kk;
             float rar = 0, lar = 0, ray = 0, lay = 0;
             float rlp = Mathf.Cos(f * 0.6662f) * 1.4f * g / kk, llp = Mathf.Cos(f * 0.6662f + Mathf.PI) * 1.4f * g / kk;
-            bool riding = Motor.SuspendedByGame && p.GetMode() != Player.Mode.Normal;
+            bool riding = false;
             if (riding) { rap += -Mathf.PI / 5f; lap += -Mathf.PI / 5f; rlp = -1.4137167f; llp = -1.4137167f; }
 
             // arm pose from the held item / use action

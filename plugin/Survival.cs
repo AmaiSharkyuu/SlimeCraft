@@ -124,10 +124,20 @@ namespace SlimeCraft
             return damage > 0;
         }
 
+        /// <summary>Minecraft's air supply in ticks (300 = ten bubbles); drowning hurts 2 every second once it runs out.</summary>
+        public static int Air = 300;
+
         public static void Tick()
         {
             if (HurtTime > 0) HurtTime--;
             if (InvulnerableTicks > 0) InvulnerableTicks--;
+            if (Motor.Submerged && !Effects.Has("water_breathing") && !Effects.Has("conduit_power") && !GameMode.Creative)
+            {
+                int resp = Enchants.Level(Inventory.ArmorIn("head"), "respiration");
+                if (resp == 0 || Random.Range(0, resp + 1) == 0) Air--;
+                if (Air <= -20) { Air = 0; Damage(2f, "drown"); }
+            }
+            else if (Air < 300) Air = Mathf.Min(300, Air + 4);
         }
     }
 
