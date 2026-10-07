@@ -126,9 +126,29 @@ namespace SlimeCraft
             Flush();
         }
 
+        /// <summary>
+        /// Minecraft draws Chinese, Japanese and Korean with its unifont, which SlimeCraft does not carry; text with
+        /// characters missing from the bitmap fonts falls back to the system font at the same size.
+        /// </summary>
+        private static bool NeedsFallback(string s)
+        {
+            foreach (var c in s) if (c != ' ' && !glyphs.ContainsKey(c)) return true;
+            return false;
+        }
+
+        private static GUIStyle fallback;
+
+        private static GUIStyle Fallback()
+        {
+            if (fallback == null) fallback = new GUIStyle(GUI.skin.label) { padding = new RectOffset(), margin = new RectOffset(), clipping = TextClipping.Overflow, wordWrap = false };
+            fallback.fontSize = Mathf.RoundToInt(8.5f * McGui.Scale);
+            return fallback;
+        }
+
         public static float Width(string s)
         {
             if (!loaded) Load();
+            if (NeedsFallback(s)) return Fallback().CalcSize(new GUIContent(s)).x / McGui.Scale;
             float w = 0;
             foreach (var c in s) w += Adv(c);
             return w;
@@ -154,6 +174,13 @@ namespace SlimeCraft
 
         private static void DrawRaw(string s, float x, float y, Color color)
         {
+            if (NeedsFallback(s))
+            {
+                var st = Fallback();
+                st.normal.textColor = color;
+                GUI.Label(new Rect(x * McGui.Scale, (y - 1.5f) * McGui.Scale, 4000, 12 * McGui.Scale), s, st);
+                return;
+            }
             var old = GUI.color;
             GUI.color = color;
             foreach (var c in s)

@@ -103,7 +103,7 @@ namespace SlimeCraft
             else
                 tabs.Add(new Tab { Key = "itemGroup.buildingBlocks", Fallback = "Building Blocks", Items = SurvivalPalette, Icon = B("bricks"), Column = 0 });
             // Slime storage: a pen in the inventory where slimes wait safe and warm, in both modes.
-            tabs.Add(new Tab { Key = "slimeStorage", Fallback = "Stockage de Slime", Icon = new ItemStack(Identifiable.Id.TABBY_SLIME, 1), Storage = true, Column = GameMode.Creative ? 5 : 1 });
+            tabs.Add(new Tab { Key = "slimeStorage", Fallback = McAssets.Mod("slimeStorage"), Icon = new ItemStack(Identifiable.Id.TABBY_SLIME, 1), Storage = true, Column = GameMode.Creative ? 5 : 1 });
             tabs.Add(new Tab { Key = "itemGroup.inventory", Fallback = "Survival Inventory", Icon = B("crafting_table"), Bottom = true, Column = 6 });
         }
 
@@ -486,7 +486,7 @@ namespace SlimeCraft
                     McGui.Blit(tabsTex, left + 175, top + 18, 244, 0, 12, 15);
                 else
                 {
-                    if (destroyHover) { Highlight(left + 173, top + 112); tooltipText = "Détruire l'objet"; }
+                    if (destroyHover) { Highlight(left + 173, top + 112); tooltipText = McAssets.T("inventory.binSlot", "Destroy Item"); }
                     DrawPreview(m);
                 }
             }

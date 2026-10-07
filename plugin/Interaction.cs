@@ -361,6 +361,7 @@ namespace SlimeCraft
             var pos = actor.transform.position;
             Destroyer.DestroyActor(actor.gameObject, "SlimeCraft.PickUp");
             Inventory.Add(stack);
+            TutorialPatches.Vac(id);
             View.I?.Swing();
             Hud.ShowItemName();
             McSound.Play("random/pop", pos, 0.2f, ((Random.value - Random.value) * 0.7f + 1f) * 2f);
@@ -387,6 +388,7 @@ namespace SlimeCraft
             go.transform.localScale = prefab.transform.localScale;
             PhysicsUtil.RestoreFreezeRotationConstraints(go);
             Consume();
+            TutorialPatches.Shoot(held.Actor);
             View.I?.Swing();
             McSound.Play(Identifiable.IsSlime(held.Actor) ? "mob/slime/small" : "dig/grass", go.transform.position, 0.8f, Random.Range(0.9f, 1.1f));
         }
@@ -541,6 +543,7 @@ namespace SlimeCraft
                 // Counts as shot by Beatrix, so silos, feeders and the Plort Market accept it.
                 var vac = go.GetComponent<Vacuumable>();
                 if (vac != null) vac.Launch(Vacuumable.LaunchSource.PLAYER);
+                TutorialPatches.Shoot(s.Actor);
             }
             McSound.Play("random/pop", eye, 0.2f, 0.8f);
         }

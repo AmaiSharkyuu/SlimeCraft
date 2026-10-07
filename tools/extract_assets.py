@@ -17,6 +17,21 @@ HOME = os.path.expanduser("~")
 FROZEN = getattr(sys, "frozen", False)  # running as SlimeCraft-Assets.exe
 
 
+def _windows_is_french():
+    try:
+        import ctypes
+        return (ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF) == 0x0C
+    except Exception:
+        return False
+
+
+FR = _windows_is_french()
+
+
+def say(fr, en):
+    print(fr if FR else en)
+
+
 def find_minecraft():
     """The player's own Minecraft 1.20.1: the official launcher's files, or a Fabric Loom cache for modders."""
     candidates = []
@@ -34,11 +49,12 @@ def find_minecraft():
 
 found = find_minecraft()
 if found is None:
-    print("Minecraft 1.20.1 est introuvable sur ce PC.")
-    print("Ouvre le launcher Minecraft officiel, lance la version 1.20.1 une fois (jusqu'au menu), ferme-la,")
-    print("puis relance cet outil.")
+    say("Minecraft 1.20.1 est introuvable sur ce PC.", "Minecraft 1.20.1 was not found on this PC.")
+    say("Ouvre le launcher Minecraft officiel, lance la version 1.20.1 une fois (jusqu'au menu), ferme-la,",
+        "Open the official Minecraft launcher, play version 1.20.1 once (up to the title screen), close it,")
+    say("puis relance cet outil.", "then run this tool again.")
     if FROZEN:
-        input("Appuie sur Entree pour fermer...")
+        input("Entree pour fermer..." if FR else "Press Enter to close...")
     sys.exit(1)
 JAR, INDEX, ASSETS = found
 if len(sys.argv) > 1:
@@ -107,7 +123,10 @@ for p in fonts["providers"]:
         lines.append("R|" + row)
 write("font.txt", "\n".join(lines), "w")
 
-lang = json.loads(obj_bytes("lang/fr_fr.json").decode("utf-8"))
+# English is the fallback (block names in blocks.txt); every language Slime Rancher offers gets its own
+# Minecraft translation file, and the plugin follows the language chosen in Slime Rancher's options.
+lang = json.loads(jar_bytes("lang/en_us.json").decode("utf-8"))
+LANGS = ["en_us", "de_de", "es_es", "fr_fr", "ru_ru", "sv_se", "zh_cn", "ja_jp", "pt_br", "ko_kr"]
 
 # --- Blocks ---------------------------------------------------------------------------------------
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -115,9 +134,19 @@ import mcblocks
 nblocks = mcblocks.extract(jar, jar_bytes, jar_img, save, write, lang)
 
 # A few UI strings straight from Minecraft's French translation.
-ui = {k: lang[k] for k in ["itemGroup.buildingBlocks", "itemGroup.inventory", "container.inventory",
-                           "itemGroup.search", "key.inventory", "itemGroup.coloredBlocks", "itemGroup.natural", "itemGroup.functional", "gameMode.survival", "gameMode.creative", "gameMode.changed", "container.crafting", "container.chest", "container.shulkerBox", "container.barrel"] if k in lang}
-write("lang.txt", "\n".join(k + "=" + v for k, v in ui.items()), "w")
+UI_KEYS = ["itemGroup.buildingBlocks", "itemGroup.inventory", "container.inventory", "itemGroup.search",
+           "key.inventory", "itemGroup.coloredBlocks", "itemGroup.natural", "itemGroup.functional",
+           "gameMode.survival", "gameMode.creative", "gameMode.changed", "container.crafting", "container.chest",
+           "container.shulkerBox", "container.barrel", "inventory.binSlot"]
+block_ids = [line.split("|")[0] for line in open(os.path.join(OUT, "blocks.txt"), encoding="utf-8").read().splitlines()]
+for code in LANGS:
+    try:
+        data = lang if code == "en_us" else json.loads(obj_bytes("lang/" + code + ".json").decode("utf-8"))
+    except KeyError:
+        continue
+    out = [k + "=" + data[k] for k in UI_KEYS if k in data]
+    out += ["block." + i + "=" + data["block.minecraft." + i] for i in block_ids if "block.minecraft." + i in data]
+    write("lang/" + code + ".txt", "\n".join(v.replace("\n", " ") for v in out), "w")
 
 # --- Sounds ---------------------------------------------------------------------------------------
 want = []
@@ -136,6 +165,7 @@ want += [f"entity/player/attack/{t}{k}" for t, n in (("strong", 6), ("weak", 4),
 for w in want:
     write("sounds/" + w + ".ogg", obj_bytes("sounds/" + w + ".ogg"))
 
-print("Termine :", nblocks, "blocs et", len(want), "sons extraits. Tu peux lancer Slime Rancher.")
+say("Termine : %d blocs et %d sons extraits. Tu peux lancer Slime Rancher." % (nblocks, len(want)),
+    "Done: %d blocks and %d sounds extracted. You can start Slime Rancher." % (nblocks, len(want)))
 if FROZEN:
-    input("Appuie sur Entree pour fermer...")
+    input("Entree pour fermer..." if FR else "Press Enter to close...")

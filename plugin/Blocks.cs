@@ -12,7 +12,8 @@ namespace SlimeCraft
     public class BlockDef
     {
         public int Index;
-        public string Id, Name, Sound, Tab;
+        public string Id, EnglishName, Sound, Tab;
+        public string Name => McAssets.T("block." + Id, EnglishName); // Minecraft's own translation
         public BlockRender Render;
         public BlockShape Shape;
         public bool Survival;
@@ -67,7 +68,7 @@ namespace SlimeCraft
                 if (f.Length < 13) continue;
                 var d = new BlockDef
                 {
-                    Index = Defs.Count, Id = f[0], Name = f[1], Sound = f[3],
+                    Index = Defs.Count, Id = f[0], EnglishName = f[1], Sound = f[3],
                     Hardness = float.Parse(f[4], CultureInfo.InvariantCulture), Light = int.Parse(f[5]),
                     Top = f[6], Side = f[7], Bottom = f[8], Front = f[9], Tab = f[11], Survival = f[12] == "1",
                 };

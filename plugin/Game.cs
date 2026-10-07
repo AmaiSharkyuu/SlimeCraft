@@ -44,6 +44,7 @@ namespace SlimeCraft
                 if (p != null) Setup(p);
                 player = p;
             }
+            if (Time.frameCount % 60 == 0) McAssets.LoadLang();
             if (!Active || player == null) return;
 
             HideSlimeRancherBits();
@@ -121,8 +122,7 @@ namespace SlimeCraft
             {
                 var style = new GUIStyle(GUI.skin.box) { fontSize = Mathf.Max(14, Screen.height / 50), wordWrap = true };
                 GUI.Box(new Rect(Screen.width * 0.2f, Screen.height * 0.05f, Screen.width * 0.6f, Screen.height * 0.12f),
-                    "SlimeCraft : les textures et sons de Minecraft ne sont pas encore extraits.\n" +
-                    "Ferme le jeu et lance SlimeCraft-Assets.exe (dans BepInEx\\plugins\\SlimeCraft), il faut Minecraft 1.20.1.", style);
+                    McAssets.Mod("missingAssets"), style);
                 return;
             }
             if (!Active || player == null) return;
@@ -157,6 +157,7 @@ namespace SlimeCraft
                     Blocks.ResetMaterials();
                     break;
                 case "clear": for (int i = 9; i < 36; i++) Inventory.Slots[i] = null; break;
+                case "lang": McAssets.ForceLang = a[0] == "auto" ? null : a[0]; McAssets.LoadLang(); break;
                 case "mode": GameMode.Set(a[0] == "creative"); break;
                 case "slot": Inventory.Selected = int.Parse(a[0]); Hud.ShowItemName(); break;
                 case "use": Interaction.TestUse(); break;

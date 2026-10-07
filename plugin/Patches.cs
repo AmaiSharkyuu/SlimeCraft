@@ -87,7 +87,7 @@ namespace SlimeCraft
         [HarmonyPatch(typeof(XlateKeyText), nameof(XlateKeyText.GetKeyString), typeof(MessageBundle), typeof(PlayerAction), typeof(bool), typeof(bool)), HarmonyPostfix]
         private static void InteractKeyName(PlayerAction inputKey, ref string __result)
         {
-            if (Game.Active && SRInput.Actions != null && ReferenceEquals(inputKey, SRInput.Actions.interact)) __result = "Clic droit";
+            if (Game.Active && SRInput.Actions != null && ReferenceEquals(inputKey, SRInput.Actions.interact)) __result = McAssets.Mod("rightClick");
         }
 
         // ---- Escape closes the Minecraft inventory instead of pausing
@@ -106,6 +106,37 @@ namespace SlimeCraft
                 if (!string.IsNullOrEmpty(name) && name == Persist.GameName) Persist.Save();
             }
             catch (System.Exception e) { Plugin.Log.LogError(e); }
+        }
+    }
+}
+
+namespace SlimeCraft
+{
+    /// <summary>
+    /// Slime Rancher's tutorials wait for the vacpack and its own keys; Steve's actions count instead:
+    /// walking (ZQSD included) for the movement tip, grabbing for "vac", putting down or throwing for "shoot".
+    /// </summary>
+    [HarmonyPatch]
+    internal static class TutorialPatches
+    {
+        private static System.Reflection.MethodBase TargetMethod()
+            => AccessTools.Method(AccessTools.Inner(typeof(TutorialDirector), "MoveTutorial"), "Update");
+
+        private static void Postfix(object __instance)
+        {
+            if (!Game.Active || !Motor.Moving) return;
+            var t = Traverse.Create(__instance).Field("endTime");
+            if (float.IsPositiveInfinity(t.GetValue<float>())) t.SetValue(Time.time + 6f);
+        }
+
+        public static void Vac(Identifiable.Id id)
+        {
+            try { SRSingleton<SceneContext>.Instance.TutorialDirector.OnVac(id); } catch { }
+        }
+
+        public static void Shoot(Identifiable.Id id)
+        {
+            try { SRSingleton<SceneContext>.Instance.TutorialDirector.OnShoot(id); } catch { }
         }
     }
 }
