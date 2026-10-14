@@ -1,4 +1,4 @@
-"""
+r"""
 Builds SlimeCraft's assets from the player's own Minecraft 1.20.1 files, so the mod never ships Mojang's assets.
 Built into SlimeCraft-Assets.exe for players; run with Python by modders.
 
