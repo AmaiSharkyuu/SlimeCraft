@@ -200,7 +200,7 @@ namespace SlimeCraft
             bool blocked = Screens.Open || Chat.Open || Motor.SuspendedByGame || !Game.Gameplay();
             Current = blocked ? new Target() : Raycast();
 
-            bool left = !blocked && Input.GetMouseButton(0), right = !blocked && Input.GetMouseButton(1);
+            bool left = !blocked && (Input.GetMouseButton(0) || Time.time < TestMineUntil), right = !blocked && (Input.GetMouseButton(1) || Time.time < TestHoldUntil);
             // a click is kept until a 20 Hz tick handles it, so a quick click between two ticks is not lost
             if (left && !leftWas) leftLatch = true;
             if (right && !rightWas) rightLatch = true;
@@ -419,6 +419,14 @@ namespace SlimeCraft
             Particles.Hit(t.Point, t.Normal, terrainBlock.Default);
             if (progress >= 1f)
             {
+                // the scenery around the spot turns into Minecraft blocks, and the block where you hit breaks for real
+                if (SrCarve.Carve(t.Point - t.Normal * 0.3f, SrCarve.MineRadius) && Nearest(t.Point - t.Normal * 0.3f, out var dugCell))
+                {
+                    BreakBlock(dugCell, held, false);
+                    StopMining();
+                    breakCooldown = 5;
+                    return;
+                }
                 Sounds.Play(Sounds.BlockEvent(terrainBlock.Sound, "break"), t.Point, 1f, 0.8f);
                 Particles.Break(t.Point - t.Normal * 0.5f, terrainBlock.Default);
                 if (!GameMode.Creative)
@@ -432,6 +440,22 @@ namespace SlimeCraft
                 StopMining();
                 breakCooldown = 5;
             }
+        }
+
+        /// <summary>The Minecraft block closest to a point (within a block and a half).</summary>
+        private static bool Nearest(Vector3 p, out Vector3Int best)
+        {
+            best = default;
+            float bd = 2.3f;
+            var c0 = BlockWorld.CellAt(p);
+            for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) for (int z = -1; z <= 1; z++)
+            {
+                var c = c0 + new Vector3Int(x, y, z);
+                if (!BlockWorld.Has(c)) continue;
+                float d = (BlockWorld.Center(c) - p).sqrMagnitude;
+                if (d < bd) { bd = d; best = c; }
+            }
+            return bd < 2.3f;
         }
 
         public static void StopMining()
@@ -486,6 +510,7 @@ namespace SlimeCraft
                 if (o != null && o.Block == s.Block) BlockWorld.Remove(other, false);
             }
             BlockWorld.Remove(c);
+            SrCarve.Exposed(c);
         }
 
         private static void UpdateCrack()
@@ -1066,6 +1091,7 @@ namespace SlimeCraft
         }
 
         public static void TestAttack() { Current = Raycast(); if (Current.Any) Attack(Current); }
+        public static float TestHoldUntil, TestMineUntil;
         public static void TestUse() { Current = Raycast(); Use(Current, true); }
     }
 

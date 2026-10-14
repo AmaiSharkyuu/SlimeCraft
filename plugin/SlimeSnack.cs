@@ -20,7 +20,6 @@ namespace SlimeCraft
 
             var label = SrItems.Name(id);
             Chat.ActionBar(McData.French ? "Miam, un " + label + " !" : "Yum, a " + label + "!");
-            for (int i = 0; i < 8; i++) Particles.Smoke(SrWorld.Eye + Camera.main.transform.forward * 0.5f + Random.insideUnitSphere * 0.2f);
         }
 
         private static void Effect(string kind)

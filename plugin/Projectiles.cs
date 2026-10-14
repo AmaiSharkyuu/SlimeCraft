@@ -130,6 +130,7 @@ namespace SlimeCraft
             bool water = SrWorld.IsWater(at);
             if (!water)
             {
+                SrCarve.Blast(at, power);
                 // rays out from the centre, each losing intensity with every block's resistance
                 var broken = new HashSet<Vector3Int>();
                 for (int j = 0; j < 16; j++)

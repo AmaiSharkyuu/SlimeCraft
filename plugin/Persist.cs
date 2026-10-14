@@ -40,6 +40,7 @@ namespace SlimeCraft
                     ["effects"] = Effects.Save(),
                     ["rules"] = new JObject { ["keepInventory"] = Commands.KeepInventory, ["doMobSpawning"] = Commands.MobSpawning, ["naturalRegeneration"] = Commands.NaturalRegen },
                     ["blocks"] = BlockWorld.Save(),
+                    ["carve"] = SrCarve.Save(),
                     ["perspective"] = View.I != null ? View.I.Perspective : 0,
                 };
                 if (Spawn.HasValue) o["spawn"] = new JArray(Spawn.Value.x, Spawn.Value.y, Spawn.Value.z);
@@ -95,6 +96,7 @@ namespace SlimeCraft
                 if (r != null) { Commands.KeepInventory = (bool)r["keepInventory"]; Commands.MobSpawning = (bool)r["doMobSpawning"]; Mobs.Spawning = Commands.MobSpawning; Commands.NaturalRegen = (bool?)r["naturalRegeneration"] ?? true; }
                 if (o["spawn"] is JArray sp) Spawn = new Vector3((float)sp[0], (float)sp[1], (float)sp[2]);
                 BlockWorld.Load(o["blocks"] as JObject);
+                SrCarve.Load(o["carve"] as JObject);
                 pendingPerspective = (int?)o["perspective"] ?? 0;
                 if (o["items"] is JArray items)
                     foreach (var it in items)

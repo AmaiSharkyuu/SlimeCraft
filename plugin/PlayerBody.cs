@@ -168,7 +168,7 @@ namespace SlimeCraft
             string pose = heldStack == null ? "empty" : "item";
             if (Interaction.Using)
             {
-                switch (Interaction.UseAction) { case "bow": pose = "bow"; break; case "spear": pose = "spear"; break; case "block": pose = "block"; break; case "crossbow": pose = "crossbow_charge"; break; }
+                switch (Interaction.UseAction) { case "bow": pose = "bow"; break; case "spear": pose = "spear"; break; case "block": pose = "block"; break; case "crossbow": pose = "crossbow_charge"; break; case "eat": case "drink": pose = "eat"; break; }
             }
             switch (pose)
             {
@@ -177,6 +177,16 @@ namespace SlimeCraft
                 case "spear": rap = rap * 0.5f - Mathf.PI; ray = 0; break;
                 case "bow": ray = -0.1f + hy; lay = 0.1f + hy + 0.4f; rap = -Mathf.PI / 2f + hp; lap = -Mathf.PI / 2f + hp; break;
                 case "crossbow_charge": ray = -0.8f; rap = -0.97079635f; lap = -0.97079635f; lay = 0.4f; break;
+                case "eat":
+                {
+                    // not in vanilla (its arm just hangs while eating): the food is held up in front of the mouth,
+                    // a little nudge towards it at each bite
+                    float bite = Interaction.UseTicksLeft <= 25 ? Mathf.Max(0f, Mathf.Sin((Interaction.UseElapsed + td) * Mathf.PI / 2f)) : 0f;
+                    rap = -1.75f + hp - bite * 0.12f;
+                    ray = -0.6f;
+                    rar = 0f;
+                    break;
+                }
             }
 
             // animateArms (attack swing)

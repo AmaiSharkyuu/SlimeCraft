@@ -28,17 +28,25 @@ namespace SlimeCraft
         private static float acc;
         private static MaterialPropertyBlock block;
 
-        private static Material Mat(Texture t, bool glow)
+        /// <summary>
+        /// One unlit material per texture. Slime Rancher's Paintlight shader ignored the texture region and the colour
+        /// of each particle (every particle showed the whole atlas), so the quads carry their uv and colour themselves.
+        /// </summary>
+        private static Material Mat(Texture t)
         {
             if (t == null) t = Texture2D.whiteTexture;
             if (mats.TryGetValue(t, out var m) && m != null) return m;
-            m = BlockWorld.MakeMat(1, t);
-            m.enableInstancing = true;
-            m.SetFloat("_Cutoff", 0.1f);
-            if (glow) { m.EnableKeyword("_EMISSION"); m.SetColor("_EmissionColor", Color.white * 0.8f); m.SetTexture("_EmissionMap", t); }
+            m = new Material(BlockWorld.FindShader("Sprites/Default")) { name = "mc:particles", mainTexture = t, renderQueue = 3100 };
+            Object.DontDestroyOnLoad(m);
             mats[t] = m;
             return m;
         }
+
+        private static readonly Dictionary<Texture, Mesh> meshes = new Dictionary<Texture, Mesh>();
+        private static readonly List<Vector3> mv = new List<Vector3>();
+        private static readonly List<Vector2> muv = new List<Vector2>();
+        private static readonly List<Color> mcol = new List<Color>();
+        private static readonly List<int> mtri = new List<int>();
 
         private static void Add(P p)
         {
@@ -106,10 +114,27 @@ namespace SlimeCraft
         public static void Eat(ItemStack s)
         {
             var cam = Camera.main.transform;
-            var at = cam.position + cam.forward * 0.6f - cam.up * 0.3f;
-            var tex = ItemRender.Icon(s, out var uv);
-            for (int i = 0; i < 5; i++)
-                Add(new P { Pos = at + Random.insideUnitSphere * 0.1f, Vel = cam.forward * 0.05f + Random.insideUnitSphere * 0.05f + Vector3.up * 0.05f, Size = 0.04f, Life = 10, Tex = tex, Uv = Sub(uv, Random.Range(0, 4), Random.Range(0, 4), 4) });
+            var look = cam.forward;
+            if (View.I != null && View.I.Perspective != 0)
+            {
+                // F5: the camera is away from the head, the bits come out of the mouth
+                var head = SrWorld.Player.transform.rotation * Vector3.forward;
+                if (View.I.Perspective == 2) head = -cam.forward;
+                look = new Vector3(head.x, 0, head.z).normalized;
+            }
+            var at = SrWorld.Eye + look * 0.35f - Vector3.up * 0.15f;
+            Texture tex; Rect uv; Color tint = Color.white; bool goo = false;
+            if (s.IsSr && Identifiable.IsSlime(s.Actor) && Atlas.Has("item/slime_ball"))
+            {
+                tex = Atlas.Texture; uv = Atlas.Rect("item/slime_ball"); tint = SrItems.Color(s.Actor); tint.a = 1f; goo = true;
+            }
+            else tex = ItemRender.Icon(s, out uv);
+            for (int i = 0; i < (goo ? 8 : 5); i++)
+            {
+                // the middle of the picture: Slime Rancher icons have empty borders
+                var piece = s.IsSr && !goo ? Sub(uv, Random.Range(1, 3), Random.Range(1, 3), 4) : Sub(uv, Random.Range(0, 4), Random.Range(0, 4), 4);
+                Add(new P { Pos = at + Random.insideUnitSphere * 0.08f, Vel = look * 0.06f + Random.insideUnitSphere * 0.05f + Vector3.up * 0.08f, Size = goo ? 0.05f : 0.04f, Life = 12 + Random.Range(0, 6), Tex = tex, Uv = piece, Color = tint });
+            }
         }
 
         public static void ItemBreak(ItemStack s)
@@ -198,25 +223,44 @@ namespace SlimeCraft
                     if (p.Sheet != null && p.Frames > 0) p.Tex = McTex.Get(p.Sheet + Mathf.Min(p.Frames - 1, p.Age * p.Frames / Mathf.Max(1, p.Life)));
                 }
             }
-            if (mesh == null)
-            {
-                mesh = new Mesh();
-                mesh.vertices = new[] { new Vector3(-0.5f, -0.5f, 0), new Vector3(-0.5f, 0.5f, 0), new Vector3(0.5f, 0.5f, 0), new Vector3(0.5f, -0.5f, 0) };
-                mesh.uv = new[] { new Vector2(0, 0), new Vector2(0, 1), new Vector2(1, 1), new Vector2(1, 0) };
-                mesh.normals = new[] { Vector3.back, Vector3.back, Vector3.back, Vector3.back };
-                mesh.triangles = new[] { 0, 1, 2, 0, 2, 3 };
-                Object.DontDestroyOnLoad(mesh);
-            }
-            if (block == null) block = new MaterialPropertyBlock();
-            var rot = Camera.main.transform.rotation;
+            // one mesh per texture, camera-facing quads with their own uv and colour
+            var cam = Camera.main.transform;
+            Vector3 right = cam.right, up = cam.up;
             float pt = acc / 0.05f;
+            float light = Mathf.Clamp(RenderSettings.ambientLight.grayscale * 1.6f + 0.35f, 0.35f, 1f);   // darker at night, like Minecraft's lit particles
+            var groups = new Dictionary<Texture, List<P>>();
             foreach (var p in live)
             {
-                block.Clear();
-                block.SetVector("_MainTex_ST", new Vector4(p.Uv.width, p.Uv.height, p.Uv.x, p.Uv.y));
-                block.SetColor("_Color", p.Color);
-                var m = Matrix4x4.TRS(p.Pos + p.Vel * pt, rot, Vector3.one * p.Size * 2f);
-                Graphics.DrawMesh(mesh, m, Mat(p.Tex, p.Glow), 0, null, 0, block, false, false);
+                var t = p.Tex ?? Texture2D.whiteTexture;
+                if (!groups.TryGetValue(t, out var l)) groups[t] = l = new List<P>();
+                l.Add(p);
+            }
+            foreach (var kv in meshes) if (kv.Value != null && !groups.ContainsKey(kv.Key)) kv.Value.Clear();
+            foreach (var g in groups)
+            {
+                mv.Clear(); muv.Clear(); mcol.Clear(); mtri.Clear();
+                foreach (var p in g.Value)
+                {
+                    var c = p.Pos + p.Vel * pt;
+                    var r = right * p.Size; var u = up * p.Size;
+                    int b = mv.Count;
+                    mv.Add(c - r - u); mv.Add(c - r + u); mv.Add(c + r + u); mv.Add(c + r - u);
+                    muv.Add(new Vector2(p.Uv.xMin, p.Uv.yMin)); muv.Add(new Vector2(p.Uv.xMin, p.Uv.yMax)); muv.Add(new Vector2(p.Uv.xMax, p.Uv.yMax)); muv.Add(new Vector2(p.Uv.xMax, p.Uv.yMin));
+                    var col = p.Glow ? p.Color : new Color(p.Color.r * light, p.Color.g * light, p.Color.b * light, p.Color.a);
+                    mcol.Add(col); mcol.Add(col); mcol.Add(col); mcol.Add(col);
+                    mtri.Add(b); mtri.Add(b + 1); mtri.Add(b + 2); mtri.Add(b); mtri.Add(b + 2); mtri.Add(b + 3);
+                }
+                if (!meshes.TryGetValue(g.Key, out var m) || m == null)
+                {
+                    m = new Mesh { name = "mc particles" };
+                    m.MarkDynamic();
+                    Object.DontDestroyOnLoad(m);
+                    meshes[g.Key] = m;
+                }
+                m.Clear();
+                m.SetVertices(mv); m.SetUVs(0, muv); m.SetColors(mcol); m.SetTriangles(mtri, 0);
+                m.bounds = new Bounds(cam.position, Vector3.one * 2000f);
+                Graphics.DrawMesh(m, Matrix4x4.identity, Mat(g.Key), 0);
             }
         }
     }

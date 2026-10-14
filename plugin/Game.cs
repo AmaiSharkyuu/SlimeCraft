@@ -109,6 +109,7 @@ namespace SlimeCraft
             ItemEntity.ClearAll();
             Mobs.ClearAll();
             BlockWorld.Clear();
+            SrCarve.Clear();
             Particles.Clear();
             SrModels.ForgetAll();
             Persist.Slot = null;
@@ -225,6 +226,32 @@ namespace SlimeCraft
                 case "slot": Inventory.Selected = int.Parse(a[0]); Hud.ShowItemName(); break;
                 case "attack": Interaction.TestAttack(); break;
                 case "use": Interaction.TestUse(); break;
+                case "hold": Interaction.TestHoldUntil = Time.time + F(0); break;
+                case "carve": { var cam = Camera.main.transform; if (Physics.Raycast(cam.position, cam.forward, out var h, 8f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore)) SrCarve.Carve(h.point, a.Length > 0 && a[0] != "" ? F(0) : SrCarve.MineRadius); break; }
+                case "probe":
+                {
+                    var cam = Camera.main.transform;
+                    if (!Physics.Raycast(cam.position, cam.forward, out var h, 8f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore)) break;
+                    var c = h.collider;
+                    Plugin.Log.LogInfo($"probe {c.name} type={c.GetType().Name} layer={c.gameObject.layer} path={c.transform.parent?.name}/{c.name} mf={c.GetComponent<MeshFilter>() != null}");
+                    foreach (var hh in Physics.RaycastAll(h.point + Vector3.up * 60f, Vector3.down, 200f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore))
+                        Plugin.Log.LogInfo($"  down: {hh.collider.name} y={hh.point.y:F2} terrain={SrWorld.IsTerrain(hh.collider)}");
+                    foreach (var tr in UnityEngine.Object.FindObjectsOfType<Terrain>())
+                        Plugin.Log.LogInfo($"  terrain {tr.name} pos={tr.transform.position} size={tr.terrainData?.size} holes={tr.terrainData?.holesResolution}");
+                    var near = new List<string>();
+                    foreach (var r in UnityEngine.Object.FindObjectsOfType<MeshRenderer>())
+                        if (r.enabled && r.gameObject.activeInHierarchy && r.bounds.SqrDistance(h.point) < 9f && r.bounds.size.magnitude > 6f) near.Add($"{r.transform.parent?.name}/{r.name} L{r.gameObject.layer} {(r.GetComponent<MeshFilter>()?.sharedMesh?.isReadable)} {r.bounds.size}");
+                    Plugin.Log.LogInfo("  near: " + string.Join(" | ", near.ToArray()));
+                    foreach (var r in UnityEngine.Object.FindObjectsOfType<MeshRenderer>())
+                        if (r.bounds.Contains(h.point) || r.bounds.SqrDistance(h.point) < 0.5f)
+                        {
+                            var mf = r.GetComponent<MeshFilter>();
+                            Plugin.Log.LogInfo($"  renderer {r.transform.parent?.name}/{r.name} layer={r.gameObject.layer} mesh={(mf != null && mf.sharedMesh != null ? mf.sharedMesh.name + " readable=" + mf.sharedMesh.isReadable + " tris=" + mf.sharedMesh.triangles.Length / 3 : "none")} static={r.gameObject.isStatic} size={r.bounds.size}");
+                        }
+                    break;
+                }
+                case "mine": Interaction.TestMineUntil = Time.time + F(0); break;
+                case "survival": GameMode.Set(false, true); break;
                 case "inv": Screens.Toggle(); break;
                 case "f5": if (View.I != null) View.I.Perspective = int.Parse(a[0]); break;
                 case "lang": McData.ForceLang = a[0] == "auto" ? null : a[0]; McData.FollowGameLanguage(); break;

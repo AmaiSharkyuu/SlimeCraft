@@ -50,6 +50,9 @@ namespace SlimeCraft
             v.Setup();
         }
 
+        /// <summary>New skin: the hand and the body are built again.</summary>
+        public void RefreshSkin() => Setup();
+
         private void Setup()
         {
             I = this;

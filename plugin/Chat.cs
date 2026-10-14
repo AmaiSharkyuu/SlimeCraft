@@ -181,7 +181,7 @@ namespace SlimeCraft
     /// <summary>The commands. Coordinates are Minecraft's (z points south = Unity -z), ~ is relative.</summary>
     public static class Commands
     {
-        private static readonly string[] Names = { "gamemode", "give", "enchant", "effect", "tp", "teleport", "time", "weather", "kill", "clear", "xp", "experience", "summon", "setblock", "fill", "gamerule", "difficulty", "spawnpoint", "seed", "help", "say", "me", "title", "playsound", "heal", "feed", "sn", "locate", "msg", "tell" };
+        private static readonly string[] Names = { "gamemode", "give", "enchant", "effect", "tp", "teleport", "time", "weather", "kill", "clear", "xp", "experience", "summon", "setblock", "fill", "gamerule", "difficulty", "spawnpoint", "seed", "help", "say", "me", "title", "playsound", "heal", "feed", "sn", "locate", "msg", "tell", "skin" };
         private static List<string> itemIds, blockIds, entityIds;
         public static bool KeepInventory, MobSpawning = true, DaylightCycle = true, NaturalRegen = true;
 
@@ -238,6 +238,7 @@ namespace SlimeCraft
                 case "difficulty": return new[] { "peaceful", "easy", "normal", "hard" };
                 case "title": return i == 1 ? Targets : i == 2 ? new[] { "title", "subtitle", "actionbar", "clear" } : new string[0];
                 case "playsound": return i == 1 ? McData.SoundEvents.Keys.Select(k => "minecraft:" + k) : Targets;
+                case "skin": return new[] { "steve", "amai" };
                 case "help": return Names;
                 case "sn": return new[] { "item", "spawn", "warp", "fastbuild", "fastgrow", "nodamage", "oxygen", "nocost", "unlockall", "daynight", "biome", "goto" };
             }
@@ -474,6 +475,13 @@ namespace SlimeCraft
                     return;
                 }
                 case "playsound": if (a.Length > 1) Sounds.Play(Strip(a[1]), null); return;
+                case "skin":
+                {
+                    bool toSteve = a.Length > 1 ? a[1].ToLowerInvariant() == "steve" : !PlayerSkin.UseSteve;
+                    if (!PlayerSkin.Set(toSteve)) { Chat.Add("§c" + (McData.French ? "Le skin d'Amai n'est pas installé" : "Amai's skin is not installed")); return; }
+                    Chat.Add(McData.French ? "Skin : " + (toSteve ? "Steve" : "Amai") : "Skin: " + (toSteve ? "Steve" : "Amai"));
+                    return;
+                }
                 case "heal": Health.Heal(20); return;
                 case "feed": Hunger.Eat(20, 1f); Hunger.Drink(100f); return;
                 case "locate": Chat.Add("§c" + McData.T("commands.locate.structure.not_found", "Aucune structure de ce type à proximité")); return;

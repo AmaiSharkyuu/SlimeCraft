@@ -313,7 +313,7 @@ namespace SlimeCraft
                 case "thirdperson_righthand":
                     t.localPosition = new Vector3(0f, 0.05f, 0.1f);
                     t.localRotation = Quaternion.Euler(0f, 0f, 0f);
-                    t.localScale = Vector3.one * 0.55f;
+                    t.localScale = Vector3.one * 0.38f;
                     break;
                 case "ground":
                     t.localPosition = Vector3.up * 0.05f;
