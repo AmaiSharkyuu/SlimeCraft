@@ -118,9 +118,10 @@ namespace SlimeCraft
         }
 
         /// <summary>What a Slime Rancher surface is made of, guessed from its object and physics material names.</summary>
-        public static string SurfaceAt(RaycastHit hit)
+        public static string SurfaceAt(RaycastHit hit) => SurfaceKind(hit.collider);
+
+        public static string SurfaceKind(Collider c)
         {
-            var c = hit.collider;
             if (c == null) return "stone";
             var n = ((c.sharedMaterial != null ? c.sharedMaterial.name : "") + " " + c.name + " " + (c.transform.parent != null ? c.transform.parent.name : "")).ToLowerInvariant();
             if (n.Contains("wood") || n.Contains("plank") || n.Contains("deck") || n.Contains("bridge") || n.Contains("stair") || n.Contains("fence") || n.Contains("crate")) return "wood";

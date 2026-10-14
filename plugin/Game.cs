@@ -227,7 +227,7 @@ namespace SlimeCraft
                 case "attack": Interaction.TestAttack(); break;
                 case "use": Interaction.TestUse(); break;
                 case "hold": Interaction.TestHoldUntil = Time.time + F(0); break;
-                case "carve": { var cam = Camera.main.transform; if (Physics.Raycast(cam.position, cam.forward, out var h, 8f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore)) SrCarve.Carve(h.point, a.Length > 0 && a[0] != "" ? F(0) : SrCarve.MineRadius); break; }
+                case "dig": { var cam = Camera.main.transform; if (Physics.Raycast(cam.position, cam.forward, out var h, 8f, SrWorld.SolidMask, QueryTriggerInteraction.Ignore)) Plugin.Log.LogInfo("dig " + h.collider.name + " " + SrCarve.Dig(h.point, h.normal, null)); break; }
                 case "probe":
                 {
                     var cam = Camera.main.transform;

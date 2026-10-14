@@ -409,7 +409,7 @@ namespace SlimeCraft
             {
                 mining = true; miningTerrain = true; progress = 0; hitSoundTicks = 0;
                 terrainPoint = t.Point; terrainNormal = t.Normal;
-                terrainBlock = SrWorld.MinedBlock(t.Hit, out terrainOre);
+                terrainBlock = SrCarve.GroundBlock(BlockWorld.CellAt(t.Point - t.Normal * 0.05f));
             }
             if (terrainBlock == null) return;
             View.I?.Swing();
@@ -419,10 +419,9 @@ namespace SlimeCraft
             Particles.Hit(t.Point, t.Normal, terrainBlock.Default);
             if (progress >= 1f)
             {
-                // the scenery around the spot turns into Minecraft blocks, and the block where you hit breaks for real
-                if (SrCarve.Carve(t.Point - t.Normal * 0.3f, SrCarve.MineRadius) && Nearest(t.Point - t.Normal * 0.3f, out var dugCell))
+                // the block-sized piece of the map you were hitting is cut out of it
+                if (SrCarve.Dig(t.Point, t.Normal, held))
                 {
-                    BreakBlock(dugCell, held, false);
                     StopMining();
                     breakCooldown = 5;
                     return;

@@ -56,7 +56,7 @@ namespace SlimeCraft
 
         private static Rect Sub(Rect r, int x, int y, int n) => new Rect(r.x + r.width * x / n, r.y + r.height * y / n, r.width / n, r.height / n);
 
-        private static string ParticleTex(BState s)
+        public static string ParticleTex(BState s)
         {
             var models = McData.ModelsFor(s);
             if (models.Count > 0 && McData.Models.TryGetValue(models[0].Model, out var m) && m["particle"] != null) return (string)m["particle"];
