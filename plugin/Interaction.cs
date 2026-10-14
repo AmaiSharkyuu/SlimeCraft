@@ -797,16 +797,27 @@ namespace SlimeCraft
             Inventory.ShrinkHeld();
         }
 
-        /// <summary>A held Slime Rancher thing: put it down where you aim, or eat a fruit or veggie in the air.</summary>
+        private static Vector3? putPoint;
+        private static Vector3 putNormal;
+
+        /// <summary>
+        /// A held Slime Rancher thing. Slimes, fruits and veggies are food: holding right click eats them like a
+        /// Minecraft steak, a quick click on the ground still puts them down. Anything else is just put down.
+        /// </summary>
         private static void UseSrItem(Target t, ItemStack held, bool fresh)
         {
             if (!fresh) return;
-            if (t.Any && t.Distance <= Reach)
+            bool surface = t.Any && t.Distance <= Reach;
+            bool slime = Identifiable.IsSlime(held.Actor);
+            if (slime || SrItems.Edible(held.Actor) && Hunger.CanEat(false))
             {
-                PutDown(held, t.Point, t.Normal);
+                putPoint = surface ? t.Point : (Vector3?)null;
+                putNormal = t.Normal;
+                // a largo is a big bite
+                StartUse("eat", Identifiable.IsLargo(held.Actor) ? 48 : 32);
                 return;
             }
-            if (SrItems.Edible(held.Actor) && Hunger.CanEat(false)) StartUse("eat", 32);
+            if (surface) PutDown(held, t.Point, t.Normal);
         }
 
         /// <summary>What slimes eat (and what makes largos): food, chickens, and plorts of other kinds.</summary>
@@ -887,7 +898,13 @@ namespace SlimeCraft
                 // LivingEntity.tickItemStackUsage: eating sounds and particles every 4 ticks after the first 7
                 if (UseTicksLeft <= 25 && UseTicksLeft % 4 == 0)
                 {
-                    if (UseAction == "eat") { Sounds.Play("entity.generic.eat", SrWorld.Eye, 0.5f + 0.5f * Random.Range(0, 2), (Random.value - Random.value) * 0.2f + 1f); Particles.Eat(held); }
+                    if (UseAction == "eat")
+                    {
+                        Sounds.Play("entity.generic.eat", SrWorld.Eye, 0.5f + 0.5f * Random.Range(0, 2), (Random.value - Random.value) * 0.2f + 1f);
+                        // a slime does not go down quietly
+                        if (held.IsSr && Identifiable.IsSlime(held.Actor)) Sounds.Play(Random.value < 0.5f ? "entity.slime.squish_small" : "entity.slime.hurt_small", SrWorld.Eye, 0.6f, Random.Range(0.9f, 1.4f));
+                        Particles.Eat(held);
+                    }
                     else Sounds.Play(held.Is("honey_bottle") ? "item.honey_bottle.drink" : "entity.generic.drink", SrWorld.Eye, 0.5f, Random.value * 0.1f + 0.9f);
                 }
                 if (UseTicksLeft <= 0) { FinishUse(held); StopUsing(); }
@@ -907,6 +924,8 @@ namespace SlimeCraft
             int used = UseElapsed;
             StopUsing();
             if (held == null) return;
+            // a quick click with a slime or a fruit (before the first bite) puts it down instead
+            if (action == "eat" && held.IsSr && used < 6 && putPoint.HasValue) { PutDown(held, putPoint.Value, putNormal); putPoint = null; return; }
             if (action == "bow") Projectiles.ShootBow(held, used);
             else if (action == "spear" && used >= 10) Projectiles.ThrowTrident(held);
             else if (action == "crossbow" && used >= CrossbowPullTime(held))
@@ -934,6 +953,13 @@ namespace SlimeCraft
         /// <summary>Item.finishUsing: food, drinks, potions, milk.</summary>
         private static void FinishUse(ItemStack held)
         {
+            if (held.IsSr && Identifiable.IsSlime(held.Actor))
+            {
+                SlimeSnack.Eaten(held.Actor);
+                Sounds.Play("entity.player.burp", SrWorld.Eye, 0.5f, Random.value * 0.1f + 0.9f);
+                if (!GameMode.Creative) Inventory.ShrinkHeld();
+                return;
+            }
             if (held.IsSr)
             {
                 // A Slime Rancher fruit or veggie fills like a Minecraft apple or carrot.
